@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' https://sdk.cashfree.com;">
+    <script src="/app.js"></script>
+    <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
+    <title>Cashfree Payment Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 400px; margin: auto; }
+        input, button { width: 100%; padding: 10px; margin-bottom: 10px; box-sizing: border-box; }
+        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        #message { margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>ExpressWayCab Booking</h2>
+        <form id="booking-form">
+            <label for="amount">Amount:</label>
+            <input type="number" id="amount" value="10" required>
+
+            <label for="email">Email:</label>
+            <input type="email" id="email" value="user@example.com" required>
+
+            <label for="phone">Phone:</label>
+            <input type="tel" id="phone" value="9410109874" required>
+
+            <label for="bookingId">Booking ID:</label>
+            <input type="text" id="bookingId" value="1" required>
+
+            <button type="submit">Proceed to Payment</button>
+        </form>
+        <div id="message"></div>
+    </div>
+
+</body>
+</html>
