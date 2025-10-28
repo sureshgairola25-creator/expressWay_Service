@@ -10,7 +10,7 @@ const cashfreeApiVersion = process.env.CASHFREE_API_VERSION;
 
 const paymentService = {
   createOrder: async (orderDetails) => {
-    const { orderAmount, customerEmail, customerPhone, bookingId } = orderDetails;
+    const { orderAmount,customer_id, customerEmail, customerPhone, bookingId } = orderDetails;
 
     if (!orderAmount || !customerPhone || !bookingId) {
       throw new BadRequest('Missing required payment details: orderAmount, customerPhone, and bookingId are mandatory.');
@@ -29,12 +29,12 @@ const paymentService = {
       order_currency: 'INR',
       order_id: `ORDER_${bookingId}_${Date.now()}`,
       customer_details: {
-        customer_id: `CUST_${customerPhone}`,
+        customer_id: `CUST_${customer_id}`,
         customer_phone: customerPhone,
         ...(customerEmail && { customer_email: customerEmail }),
       },
       order_meta: {
-        return_url: `http://localhost:3000/bookings/{order_id}`,
+        return_url: `http://localhost:3000/bookings/${customer_id}`,
       },
     };
 

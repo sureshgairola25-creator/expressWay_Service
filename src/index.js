@@ -1,4 +1,5 @@
 const express = require('express');
+const user = require('./routes/user-route');
 const seatPricing = require('./routes/seatPricingRoutes');
 const booking = require('./routes/bookingRoutes');
 const payment = require('./routes/paymentRoutes');
@@ -21,5 +22,7 @@ router.use('/trips', trip);
 router.use('/seat-pricing', seatPricing);
 router.use('/booking', booking);
 router.use('/payment', payment);
+router.use('/user', user);
+
 
 module.exports = router;

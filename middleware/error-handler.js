@@ -1,20 +1,23 @@
-const { isHttpError } = require('http-errors');
+module.exports = (err, req, res, next) => {
+  console.log('=== ERROR HANDLER CALLED ===');
+  console.log('Error type:', err.constructor.name);
+  console.log('Error message:', err.message);
+  console.log('Error status:', err.status || err.statusCode);
+  console.log('Error stack:', err.stack);
 
-module.exports = (app) => {
-  // eslint-disable-next-line no-unused-vars
-  app.use((err, req, res, next) => {
-    if (isHttpError(err)) {
-      const code = err.getCode ? err.getCode() : 400;
+  let statusCode = err.statusCode || err.status || 500;
+  let message = err.message || 'Internal Server Error';
 
-      return res.status(code).json({
-        status: 'error',
-        message: err.message,
-      });
-    }
+  // Handle http-errors specifically
+  if (err.name === 'BadRequestError' || err.name === 'ConflictError' || err.name === 'UnauthorizedError' || err.name === 'NotFoundError') {
+    statusCode = err.statusCode || err.status || 400;
+    message = err.message;
+  }
 
-    return res.status(500).json({
-      status: 'error',
-      message: err.message,
-    });
+  console.log('Sending response:', statusCode, message);
+
+  res.status(statusCode).json({
+    success: false,
+    message: message
   });
 };

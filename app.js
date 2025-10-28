@@ -121,22 +121,17 @@ app.set('view engine', 'ejs');
 
 // Mount routes
 app.use('/', indexRouter);
-app.use((req, res, next) => {
-  res.setHeader("Content-Security-Policy", "script-src 'self' https://sdk.cashfree.com;");
-  next();
-});
 
+// Global error handling middleware - must be before 404 handler
+app.use(errorHandler);
 
-// Handle 404 - Keep this after all other routes
+// Handle 404 - Keep this after all other routes and error handler
 app.all('*', (req, res, next) => {
   res.status(404).json({
     status: 'fail',
     message: `Can't find ${req.originalUrl} on this server!`
   });
 });
-
-// Global error handling middleware
-app.use(errorHandler);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {

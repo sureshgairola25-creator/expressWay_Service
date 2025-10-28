@@ -2,7 +2,6 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../database');
 
 const StartLocation = sequelize.define('StartLocation', {
-
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
@@ -11,7 +10,8 @@ const StartLocation = sequelize.define('StartLocation', {
   name: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true,
+    // Removed unique constraint completely to avoid MySQL key limit issues
+    // If uniqueness is needed, handle it in application logic
   },
   status: {
     type: DataTypes.BOOLEAN,

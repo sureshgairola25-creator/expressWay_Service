@@ -21,7 +21,8 @@ const Car = sequelize.define('Car', {
   registrationNumber: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true,
+    // Removed unique constraint completely to avoid MySQL key limit issues
+    // If uniqueness is needed, handle it in application logic
   },
 }, {
   tableName: 'Cars',

@@ -2,6 +2,19 @@ const userService = require('../services/userService');
 const asyncHandler = require('../../middleware/async');
 
 const userController = {
+
+  signup: asyncHandler(async (req, res) => {
+    const { identifier } = req.body;
+    const result = await userService.signup(identifier);
+    res.status(200).json(result);
+  }),
+
+  verify: asyncHandler(async (req, res) => {
+    const { identifier, token } = req.body;
+    const result = await userService.verify(identifier, token);
+    res.status(200).json(result);
+  }),
+
   register: asyncHandler(async (req, res) => {
     const user = await userService.registerUser(req.body);
     res.status(201).json({ success: true, data: user });
@@ -29,6 +42,12 @@ const userController = {
     const user = await userService.updateProfile(req.params.id, req.body);
     res.status(200).json({ success: true, data: user });
   }),
-};
+  
+  setPassword: asyncHandler(async (req, res) => {
+    const { identifier, password } = req.body;
+    const result = await userService.setPassword(identifier, password);
+    res.status(200).json(result);
+  }),
+}
 
 module.exports = userController;

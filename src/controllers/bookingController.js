@@ -9,8 +9,10 @@ const bookingController = {
     // Generate payment link
     const paymentResult = await paymentService.createOrder({
       orderAmount: booking.totalAmount,
-      customerEmail: req.body.customerEmail || 'customer@example.com', // Should come from user
-      customerPhone: req.body.customerPhone || '9999999999',
+      customerEmail: req.body.customerEmail,
+      customerPhone: req.body.customerPhone,
+      customer_id: req.body.userId,
+      customer_age: req.body.age,
       bookingId: booking.id,
     });
 

@@ -1,4 +1,4 @@
-const { Booking, BookedSeat, Trip, SeatPricing, User, Car, StartLocation, EndLocation, sequelize } = require('../db/models');
+const { Booking, BookedSeat, Trip, SeatPricing, User, Car, StartLocation, EndLocation, sequelize, PickupPoint, DropPoint } = require('../db/models');
 const { NotFound, BadRequest } = require('http-errors');
 const bookingService = {
   initiateBooking: async (bookingData) => {
@@ -55,21 +55,21 @@ const bookingService = {
       }, { transaction: t });
 
       // Create BookedSeat records (temporarily locked)
-      // const bookedSeatsData = seatPricingRecords.map(seat => ({
-      //   bookingId: booking.id,
-      //   tripId,
-      //   seatNumber: seat.seatNumber,
-      //   seatPrice: seat.price,
-      //   isCancelled: false,
-      // }));
+      const bookedSeatsData = seatPricingRecords.map(seat => ({
+        bookingId: booking.id,
+        tripId,
+        seatNumber: seat.seatNumber,
+        seatPrice: seat.price,
+        isCancelled: false,
+      }));
 
-      // await BookedSeat.bulkCreate(bookedSeatsData, { transaction: t });
+      await BookedSeat.bulkCreate(bookedSeatsData, { transaction: t });
 
-      // // Temporarily lock seats in SeatPricing
-      // await SeatPricing.update(
-      //   { isBooked: true },
-      //   { where: { tripId, seatNumber: selectedSeats }, transaction: t }
-      // );
+      // Temporarily lock seats in SeatPricing
+      await SeatPricing.update(
+        { isBooked: true },
+        { where: { tripId, seatNumber: selectedSeats }, transaction: t }
+      );
 
       await t.commit();
 
@@ -99,6 +99,16 @@ const bookingService = {
             {
               model: EndLocation,
               as: 'endLocation',
+              attributes: ['name'],
+            },
+            {
+              model: PickupPoint,
+              as: 'pickupPoint',
+              attributes: ['name'],
+            },
+            {
+              model: DropPoint,
+              as: 'dropPoint',
               attributes: ['name'],
             },
           ],

@@ -4,6 +4,17 @@ const { protect } = require('../../middleware/auth');
 
 const router = express.Router();
 
+
+// @route   POST /api/users/signup
+// @desc    Signup user with email or mobile
+// @access  Public
+router.post('/signup', userController.signup);
+
+// @route   POST /api/users/verify
+// @desc    Verify user with token/OTP
+// @access  Public
+router.post('/verify', userController.verify);
+
 // @route   POST /api/users/register
 // @desc    Register a new user
 // @access  Public
@@ -26,7 +37,12 @@ router.get('/me', protect, userController.getMe);
 
 // @route   PUT /api/users/update/:id
 // @desc    Update user profile
-// @access  Private (should be protected in a real app)
-router.put('/update/:id', userController.updateProfile);
+// @access  Private
+router.put('/update/:id', protect, userController.updateProfile);
+
+// @route   POST /api/users/set-password
+// @desc    Set password for verified user
+// @access  Public
+router.post('/set-password', userController.setPassword);
 
 module.exports = router;

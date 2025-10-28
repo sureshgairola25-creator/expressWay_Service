@@ -32,11 +32,32 @@ async function seedDatabase() {
     // Step 2: Insert new test data
     console.log('📝 Inserting new test data...');
 
+    // Helper function to get random element from array
+    const getRandomElement = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+    // Helper function to generate random time for today
+    const getRandomTimeToday = (startHour, endHour) => {
+      const today = new Date();
+      const hour = Math.floor(Math.random() * (endHour - startHour)) + startHour;
+      const minute = Math.floor(Math.random() * 60);
+      today.setHours(hour, minute, 0, 0);
+      return today;
+    };
+
+    // Helper function to calculate end time based on duration
+    const addHours = (date, hours) => {
+      const result = new Date(date);
+      result.setHours(result.getHours() + hours);
+      return result;
+    };
+
     // Create start locations
     const startLocations = await StartLocation.bulkCreate([
       { name: 'New Delhi', status: true },
       { name: 'Gurgaon', status: true },
       { name: 'Noida', status: true },
+      { name: 'Faridabad', status: true },
+      { name: 'Ghaziabad', status: true },
     ]);
 
     // Create pickup points
@@ -47,6 +68,9 @@ async function seedDatabase() {
       { name: 'Cyber City', startLocationId: startLocations[1].id, status: true },
       { name: 'Golf Course Road', startLocationId: startLocations[1].id, status: true },
       { name: 'Sector 18', startLocationId: startLocations[2].id, status: true },
+      { name: 'Sector 15', startLocationId: startLocations[2].id, status: true },
+      { name: 'Sector 37', startLocationId: startLocations[3].id, status: true },
+      { name: 'Neharpar', startLocationId: startLocations[4].id, status: true },
     ]);
 
     // Create end locations
@@ -55,6 +79,9 @@ async function seedDatabase() {
       { name: 'Dehradun', startLocationId: startLocations[0].id, status: true },
       { name: 'Haridwar', startLocationId: startLocations[1].id, status: true },
       { name: 'Mussoorie', startLocationId: startLocations[1].id, status: true },
+      { name: 'Chandigarh', startLocationId: startLocations[2].id, status: true },
+      { name: 'Shimla', startLocationId: startLocations[3].id, status: true },
+      { name: 'Manali', startLocationId: startLocations[4].id, status: true },
     ]);
 
     // Create drop points
@@ -68,290 +95,147 @@ async function seedDatabase() {
       { name: 'Roorkee', endLocationId: endLocations[2].id, status: true },
       { name: 'Mall Road', endLocationId: endLocations[3].id, status: true },
       { name: 'Kempty Falls', endLocationId: endLocations[3].id, status: true },
+      { name: 'Sector 17', endLocationId: endLocations[4].id, status: true },
+      { name: 'Rock Garden', endLocationId: endLocations[4].id, status: true },
+      { name: 'The Ridge', endLocationId: endLocations[5].id, status: true },
+      { name: 'Mall Road Shimla', endLocationId: endLocations[5].id, status: true },
+      { name: 'Old Manali', endLocationId: endLocations[6].id, status: true },
+      { name: 'Solang Valley', endLocationId: endLocations[6].id, status: true },
     ]);
 
     console.log('✅ Locations created');
 
-    // Create cars
-    const cars = await Car.bulkCreate([
-      {
-        carName: 'Innova Crysta',
-        carType: 'SUV',
-        totalSeats: 7,
-        registrationNumber: 'DL01CA1234',
-      },
-      {
-        carName: 'Swift Dzire',
-        carType: 'Sedan',
-        totalSeats: 5,
-        registrationNumber: 'DL01CA5678',
-      },
-      {
-        carName: 'Honda City',
-        carType: 'Sedan',
-        totalSeats: 5,
-        registrationNumber: 'DL01CA9012',
-      },
-      {
-        carName: 'Toyota Fortuner',
-        carType: 'SUV',
-        totalSeats: 7,
-        registrationNumber: 'DL01CA3456',
-      },
-      {
-        carName: 'Maruti Alto',
-        carType: 'Hatchback',
-        totalSeats: 4,
-        registrationNumber: 'DL01CA7890',
-      },
-      {
-        carName: 'Hyundai Creta',
-        carType: 'SUV',
-        totalSeats: 5,
-        registrationNumber: 'DL01CA2345',
-      },
-    ]);
+    // Create cars with different types and capacities
+    const carTypes = [
+      { name: 'Innova Crysta', type: 'SUV', seats: 7, basePrice: 15 },
+      { name: 'Swift Dzire', type: 'Sedan', seats: 5, basePrice: 12 },
+      { name: 'Honda City', type: 'Sedan', seats: 5, basePrice: 14 },
+      { name: 'Toyota Fortuner', type: 'SUV', seats: 7, basePrice: 18 },
+      { name: 'Maruti Alto', type: 'Hatchback', seats: 4, basePrice: 10 },
+      { name: 'Hyundai Creta', type: 'SUV', seats: 5, basePrice: 13 },
+      { name: 'Mahindra XUV500', type: 'SUV', seats: 7, basePrice: 16 },
+      { name: 'Volkswagen Vento', type: 'Sedan', seats: 5, basePrice: 13 },
+      { name: 'Renault Triber', type: 'MPV', seats: 7, basePrice: 11 },
+      { name: 'Tata Nexon', type: 'SUV', seats: 5, basePrice: 12 },
+    ];
 
-    console.log('✅ Cars created');
+    const cars = [];
+    let registrationCounter = 1000;
 
-    // Create trips
-    const trips = await Trip.bulkCreate([
-      {
-        startLocationId: startLocations[0].id, // New Delhi
-        endLocationId: endLocations[0].id,    // Rishikesh
-        pickupPointId: pickupPoints[0].id,    // Botanical Garden
-        dropPointId: dropPoints[0].id,        // Har Ki Pauri
-        carId: cars[0].id,                    // Innova Crysta
-        startTime: new Date('2025-10-19T09:00:00Z'),
-        endTime: new Date('2025-10-21T15:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[0].id, // New Delhi
-        endLocationId: endLocations[1].id,    // Dehradun
-        pickupPointId: pickupPoints[1].id,    // Sector 62
-        dropPointId: dropPoints[5].id,        // Nepali Farm
-        carId: cars[2].id,                    // Honda City
-        startTime: new Date('2025-10-20T06:00:00Z'),
-        endTime: new Date('2025-10-20T12:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[1].id, // Gurgaon
-        endLocationId: endLocations[2].id,    // Haridwar
-        pickupPointId: pickupPoints[4].id,    // Golf Course Road
-        dropPointId: dropPoints[6].id,        // Haridwar Junction
-        carId: cars[3].id,                    // Toyota Fortuner
-        startTime: new Date('2025-10-21T14:00:00Z'),
-        endTime: new Date('2025-10-21T20:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[2].id, // Noida
-        endLocationId: endLocations[3].id,    // Mussoorie
-        pickupPointId: pickupPoints[5].id,    // Sector 18
-        dropPointId: dropPoints[8].id,        // Kempty Falls
-        carId: cars[4].id,                    // Maruti Alto
-        startTime: new Date('2025-10-20T07:00:00Z'),
-        endTime: new Date('2025-10-20T11:00:00Z'),
-        duration: '4 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[0].id, // New Delhi
-        endLocationId: endLocations[2].id,    // Haridwar
-        pickupPointId: pickupPoints[2].id,    // Akshardham
-        dropPointId: dropPoints[7].id,        // Roorkee
-        carId: cars[5].id,                    // Hyundai Creta
-        startTime: new Date('2025-10-21T10:00:00Z'),
-        endTime: new Date('2025-10-21T16:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[1].id, // Gurgaon
-        endLocationId: endLocations[0].id,    // Rishikesh
-        pickupPointId: pickupPoints[3].id,    // Cyber City
-        dropPointId: dropPoints[1].id,        // Jawalapur
-        carId: cars[0].id,                    // Innova Crysta
-        startTime: new Date('2025-10-20T05:00:00Z'),
-        endTime: new Date('2025-10-20T11:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[2].id, // Noida
-        endLocationId: endLocations[1].id,    // Dehradun
-        pickupPointId: pickupPoints[5].id,    // Sector 18
-        dropPointId: dropPoints[5].id,        // Nepali Farm
-        carId: cars[1].id,                    // Swift Dzire
-        startTime: new Date('2025-10-21T08:00:00Z'),
-        endTime: new Date('2025-10-21T14:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[0].id, // New Delhi
-        endLocationId: endLocations[3].id,    // Mussoorie
-        pickupPointId: pickupPoints[0].id,    // Botanical Garden
-        dropPointId: dropPoints[8].id,        // Mall Road
-        carId: cars[2].id,                    // Honda City
-        startTime: new Date('2025-10-20T12:00:00Z'),
-        endTime: new Date('2025-10-20T18:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[1].id, // Gurgaon
-        endLocationId: endLocations[2].id,    // Haridwar
-        pickupPointId: pickupPoints[4].id,    // Golf Course Road
-        dropPointId: dropPoints[6].id,        // Haridwar Junction
-        carId: cars[3].id,                    // Toyota Fortuner
-        startTime: new Date('2025-10-21T16:00:00Z'),
-        endTime: new Date('2025-10-21T22:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[2].id, // Noida
-        endLocationId: endLocations[0].id,    // Rishikesh
-        pickupPointId: pickupPoints[5].id,    // Sector 18
-        dropPointId: dropPoints[0].id,        // Har Ki Pauri
-        carId: cars[4].id,                    // Maruti Alto
-        startTime: new Date('2025-10-20T09:00:00Z'),
-        endTime: new Date('2025-10-20T13:00:00Z'),
-        duration: '4 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[0].id, // New Delhi
-        endLocationId: endLocations[1].id,    // Dehradun
-        pickupPointId: pickupPoints[1].id,    // Sector 62
-        dropPointId: dropPoints[4].id,        // Raiwala
-        carId: cars[5].id,                    // Hyundai Creta
-        startTime: new Date('2025-10-21T11:00:00Z'),
-        endTime: new Date('2025-10-21T17:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[1].id, // Gurgaon
-        endLocationId: endLocations[3].id,    // Mussoorie
-        pickupPointId: pickupPoints[3].id,    // Cyber City
-        dropPointId: dropPoints[8].id,        // Kempty Falls
-        carId: cars[0].id,                    // Innova Crysta
-        startTime: new Date('2025-10-20T13:00:00Z'),
-        endTime: new Date('2025-10-20T19:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[2].id, // Noida
-        endLocationId: endLocations[2].id,    // Haridwar
-        pickupPointId: pickupPoints[5].id,    // Sector 18
-        dropPointId: dropPoints[7].id,        // Roorkee
-        carId: cars[1].id,                    // Swift Dzire
-        startTime: new Date('2025-10-21T07:00:00Z'),
-        endTime: new Date('2025-10-21T13:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[0].id, // New Delhi
-        endLocationId: endLocations[0].id,    // Rishikesh
-        pickupPointId: pickupPoints[2].id,    // Akshardham
-        dropPointId: dropPoints[1].id,        // Jawalapur
-        carId: cars[2].id,                    // Honda City
-        startTime: new Date('2025-10-20T15:00:00Z'),
-        endTime: new Date('2025-10-20T21:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[1].id, // Gurgaon
-        endLocationId: endLocations[1].id,    // Dehradun
-        pickupPointId: pickupPoints[4].id,    // Golf Course Road
-        dropPointId: dropPoints[5].id,        // Nepali Farm
-        carId: cars[3].id,                    // Toyota Fortuner
-        startTime: new Date('2025-10-21T06:00:00Z'),
-        endTime: new Date('2025-10-21T12:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[2].id, // Noida
-        endLocationId: endLocations[3].id,    // Mussoorie
-        pickupPointId: pickupPoints[5].id,    // Sector 18
-        dropPointId: dropPoints[8].id,        // Mall Road
-        carId: cars[4].id,                    // Maruti Alto
-        startTime: new Date('2025-10-20T10:00:00Z'),
-        endTime: new Date('2025-10-20T14:00:00Z'),
-        duration: '4 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[0].id, // New Delhi
-        endLocationId: endLocations[2].id,    // Haridwar
-        pickupPointId: pickupPoints[0].id,    // Botanical Garden
-        dropPointId: dropPoints[6].id,        // Haridwar Junction
-        carId: cars[5].id,                    // Hyundai Creta
-        startTime: new Date('2025-10-21T12:00:00Z'),
-        endTime: new Date('2025-10-21T18:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[1].id, // Gurgaon
-        endLocationId: endLocations[0].id,    // Rishikesh
-        pickupPointId: pickupPoints[3].id,    // Cyber City
-        dropPointId: dropPoints[0].id,        // Har Ki Pauri
-        carId: cars[0].id,                    // Innova Crysta
-        startTime: new Date('2025-10-20T14:00:00Z'),
-        endTime: new Date('2025-10-20T20:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-      {
-        startLocationId: startLocations[2].id, // Noida
-        endLocationId: endLocations[1].id,    // Dehradun
-        pickupPointId: pickupPoints[5].id,    // Sector 18
-        dropPointId: dropPoints[4].id,        // Raiwala
-        carId: cars[1].id,                    // Swift Dzire
-        startTime: new Date('2025-10-19T09:00:00Z'),
-        endTime: new Date('2025-10-21T15:00:00Z'),
-        duration: '6 hours',
-        status: true,
-      },
-    ]);
-
-    console.log('✅ Trips created');
-
-    // Create seat pricing for each trip
-    for (const trip of trips) {
-      const seatPricings = [
-        { seatNumber: 'S1', seatType: 'window', price: 599 },
-        { seatNumber: 'S2', seatType: 'middle', price: 499 },
-        { seatNumber: 'S3', seatType: 'window', price: 549 },
-        { seatNumber: 'S4', seatType: 'back', price: 449 },
-        { seatNumber: 'S5', seatType: 'middle', price: 499 },
-      ];
-
-      for (const seat of seatPricings) {
-        await SeatPricing.create({
-          tripId: trip.id,
-          seatNumber: seat.seatNumber,
-          seatType: seat.seatType,
-          price: seat.price,
-          isBooked: false,
+    // Create multiple cars of each type
+    for (const carType of carTypes) {
+      for (let i = 0; i < 10; i++) { // 10 cars of each type
+        cars.push({
+          carName: carType.name,
+          carType: carType.type,
+          totalSeats: carType.seats,
+          registrationNumber: `DL${String(registrationCounter++).padStart(2, '0')}CA${String(Math.floor(Math.random() * 9000) + 1000).padStart(4, '0')}`,
         });
       }
     }
 
-    console.log('✅ Seat pricing records created');
-    console.log('✅ New test data inserted successfully');
+    const createdCars = await Car.bulkCreate(cars);
+    console.log(`✅ ${createdCars.length} cars created`);
+
+    // Generate 50 trips for today
+    const trips = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tripRoutes = [
+      { start: 0, end: 0, duration: 6, pickupRange: [0, 3], dropRange: [0, 3] },
+      { start: 0, end: 1, duration: 7, pickupRange: [0, 3], dropRange: [3, 5] },
+      { start: 1, end: 2, duration: 5, pickupRange: [3, 5], dropRange: [5, 7] },
+      { start: 1, end: 3, duration: 8, pickupRange: [3, 5], dropRange: [7, 9] },
+      { start: 2, end: 4, duration: 4, pickupRange: [5, 7], dropRange: [9, 11] },
+      { start: 3, end: 5, duration: 6, pickupRange: [7, 8], dropRange: [11, 13] },
+      { start: 4, end: 6, duration: 9, pickupRange: [8, 9], dropRange: [13, 15] },
+    ];
+
+    let tripCounter = 0;
+    const tripsPerRoute = Math.ceil(50 / tripRoutes.length);
+
+    for (const route of tripRoutes) {
+      for (let i = 0; i < tripsPerRoute && tripCounter < 50; i++) {
+        const startTime = getRandomTimeToday(5, 22); // Random time between 5 AM and 10 PM
+        const endTime = addHours(startTime, route.duration);
+
+        // Get random pickup and drop points for this route
+        const pickupRange = pickupPoints.slice(route.pickupRange[0], route.pickupRange[1]);
+        const dropRange = dropPoints.slice(route.dropRange[0], route.dropRange[1]);
+        const pickupPoint = getRandomElement(pickupRange);
+        const dropPoint = getRandomElement(dropRange);
+
+        // Create 5-6 cars for this trip (each car gets its own trip record)
+        const carsForTrip = createdCars.slice(0, 50).sort(() => 0.5 - Math.random()).slice(0, Math.floor(Math.random() * 2) + 5); // 5-6 cars
+
+        for (const car of carsForTrip) {
+          if (tripCounter >= 50) break;
+
+          trips.push({
+            startLocationId: startLocations[route.start].id,
+            endLocationId: endLocations[route.end].id,
+            pickupPointId: pickupPoint.id,
+            dropPointId: dropPoint.id,
+            carId: car.id,
+            startTime,
+            endTime,
+            duration: `${route.duration} hours`,
+            status: true,
+          });
+
+          tripCounter++;
+        }
+      }
+    }
+
+    const createdTrips = await Trip.bulkCreate(trips);
+    console.log(`✅ ${createdTrips.length} trips created for ${today.toDateString()}`);
+
+    // Create seat pricing for each trip
+    let totalSeatsCreated = 0;
+
+    for (const trip of createdTrips) {
+      // Find the car for this trip to get seat count
+      const car = createdCars.find(c => c.id === trip.carId);
+      const seatCount = Math.min(car.totalSeats, Math.floor(Math.random() * 3) + 4); // 4-6 seats per car
+
+      // Generate seat types and prices based on car type
+      const seatTypes = ['window', 'middle', 'aisle', 'back'];
+      const basePrice = car.carType === 'SUV' ? 18 :
+                       car.carType === 'Sedan' ? 14 :
+                       car.carType === 'Hatchback' ? 10 :
+                       car.carType === 'MPV' ? 12 : 15;
+
+      for (let i = 1; i <= seatCount; i++) {
+        const seatType = getRandomElement(seatTypes);
+        const priceMultiplier = seatType === 'window' ? 1.2 :
+                              seatType === 'middle' ? 0.9 :
+                              seatType === 'back' ? 0.8 : 1.0;
+        const price = Math.round(basePrice * priceMultiplier * 100) / 100;
+
+        await SeatPricing.create({
+          tripId: trip.id,
+          seatNumber: `S${i}`,
+          seatType,
+          price,
+          isBooked: false,
+        });
+
+        totalSeatsCreated++;
+      }
+    }
+
+    console.log(`✅ ${totalSeatsCreated} seat pricing records created`);
+
+    // Log final summary
+    const todayDate = today.toISOString().split('T')[0];
+    console.log(`\n🎉 SEEDING COMPLETE!`);
+    console.log(`📊 SUMMARY FOR ${todayDate}:`);
+    console.log(`✅ ${createdTrips.length} trips created`);
+    console.log(`✅ ${createdCars.length} cars available`);
+    console.log(`✅ ${totalSeatsCreated} seats priced`);
+    console.log(`✅ All trips scheduled for ${today.toDateString()}`);
 
   } catch (error) {
     console.error('❌ Error seeding database:', error);

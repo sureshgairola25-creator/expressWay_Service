@@ -1,8 +1,10 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { User } = require('../db/models');
-const { Conflict, Unauthorized, BadRequest } = require('http-errors');
+const { Conflict, Unauthorized, BadRequest, NotFound } = require('http-errors');
 const { OAuth2Client } = require('google-auth-library');
+const { sendEmail } = require('../lib/email');
+const { sendSMS } = require('../lib/sms');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -32,22 +34,39 @@ const userService = {
       email,
       phoneNo,
       password: hashedPassword,
+      provider: 'manual',
+      isVerified: true, // Users who register with password are considered verified
     });
 
     return newUser;
   },
 
   loginUser: async (loginData) => {
-    const { email, password } = loginData;
 
-    // Find user by email
-    const user = await User.findOne({ where: { email } });
+    const { identifier, password } = loginData;
+    const isEmail = identifier.includes('@');
+    const isMobile = !isEmail && /^\d+$/.test(identifier);
+
+    // Find user by email or mobile no and ensure they are verified
+    const user = await User.findOne({
+      where: {
+        [isEmail ? 'email' : 'phoneNo']: identifier,
+        isVerified: true
+      }
+    });
+
     if (!user) {
       throw new Unauthorized('Invalid credentials');
     }
 
+    // Check if user has a password set
+    if (!user.password) {
+      throw new Unauthorized('Please set your password first using /set-password endpoint');
+    }
+
     // Check password
     const isMatch = await bcrypt.compare(password, user.password);
+
     if (!isMatch) {
       throw new Unauthorized('Invalid credentials');
     }
@@ -109,6 +128,97 @@ const userService = {
     await user.save();
     user.password = undefined; // Exclude password from response
     return user;
+  },
+
+  signup: async (identifier) => {
+    const isEmail = identifier.includes('@');
+    const isMobile = !isEmail && /^\d+$/.test(identifier);
+  
+    if (!isEmail && !isMobile) {
+      throw new BadRequest('Invalid identifier');
+    }
+  
+    // Generate 6-digit numeric OTP
+    const token = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiration = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+  
+    let user = await User.findOne({
+      where: isEmail ? { email: identifier } : { phoneNo: identifier },
+    });
+  
+    if (user && user.isVerified) {
+      throw new BadRequest('User already registered. Please login instead.');
+    }
+  
+    if (user) {
+      // Unverified user — update OTP and expiration
+      user.token = token;
+      user.tokenExpiration = expiration;
+      await user.save();
+    } else {
+      // New user — create entry
+      user = await User.create({
+        [isEmail ? 'email' : 'phoneNo']: identifier,
+        [isEmail ? 'phoneNo' : 'email']: null,
+        token,
+        tokenExpiration: expiration,
+      });
+    }
+  
+    if (isEmail) {
+      await sendEmail(identifier, 'Verification Token', `Your verification token is ${token}`);
+    } else {
+      await sendSMS(identifier, { otp: token });
+    }
+  
+    return {
+      success: true,
+      message: 'Token sent successfully',
+      identifierType: isEmail ? 'email' : 'mobile',
+    };
+  },
+  
+
+  verify: async (identifier, token) => {
+    let isEmail = identifier.includes('@');
+    let user = await User.findOne({ where: isEmail ? { email: identifier } : { phoneNo: identifier } });
+
+    if (!user || user.token !== token || new Date() > user.tokenExpiration) {
+      throw new BadRequest('Invalid token');
+    }
+
+    user.isVerified = true;
+    user.token = null;
+    user.tokenExpiration = null;
+    await user.save();
+
+    return { success: true, message: 'User verified successfully', userId: user.id };
+  },
+
+  setPassword: async (identifier, password) => {
+    let isEmail = identifier.includes('@');
+    let user = await User.findOne({ where: isEmail ? { email: identifier } : { phoneNo: identifier } });
+
+    if (!user) {
+      throw new NotFound('User not found');
+    }
+
+    if (!user.isVerified) {
+      throw new BadRequest('User must be verified before setting password');
+    }
+
+    if (user.password) {
+      throw new Conflict('Password already set for this user');
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Update user with password
+    user.password = hashedPassword;
+    await user.save();
+
+    return { success: true, message: 'Password set successfully' };
   },
 };
 

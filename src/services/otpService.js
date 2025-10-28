@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const twilio = require('twilio');
-const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 const { User, Otp } = require('../db/models');
 const { BadRequest, Unauthorized, Conflict } = require('http-errors');
 
@@ -11,19 +11,13 @@ const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
 
 const client = twilio(accountSid, authToken);
 
+// Set SendGrid API key
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
 // Generate 6-digit OTP
 const generateOtp = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
-
-// Create nodemailer transporter
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
 
 const otpService = {
   sendOtp: async (identifier, type) => {
@@ -62,16 +56,16 @@ const otpService = {
           .create({ to: identifier, channel: 'sms' });
         return { success: true, message: 'OTP sent successfully via SMS' };
       } else {
-        // Send via email
-        const mailOptions = {
-          from: process.env.EMAIL_USER,
+        // Send via email using SendGrid
+        const msg = {
           to: identifier,
+          from: process.env.SENDGRID_FROM_EMAIL,
           subject: 'Your OTP for ExpressWayCab',
           text: `Your OTP is: ${otp}. It expires in 5 minutes.`,
           html: `<p>Your OTP is: <strong>${otp}</strong></p><p>It expires in 5 minutes.</p>`,
         };
 
-        await transporter.sendMail(mailOptions);
+        await sgMail.send(msg);
         return { success: true, message: 'OTP sent successfully via email' };
       }
     } catch (error) {
