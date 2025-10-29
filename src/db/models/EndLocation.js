@@ -23,6 +23,8 @@ const EndLocation = sequelize.define('EndLocation', {
   },
 }, {
   tableName: 'EndLocations',
+  timestamps: true,
+  underscored: true
 });
 
 module.exports = EndLocation;

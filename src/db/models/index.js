@@ -34,6 +34,11 @@ Trip.belongsTo(Car, { foreignKey: 'carId' });
 PickupPoint.hasMany(Trip, { foreignKey: 'pickupPointId' });
 Trip.belongsTo(PickupPoint, { foreignKey: 'pickupPointId' });
 
+
+Trip.hasMany(Seat, { foreignKey: 'tripId' });
+Seat.belongsTo(Trip, { foreignKey: 'tripId' });
+
+
 DropPoint.hasMany(Trip, { foreignKey: 'dropPointId' });
 Trip.belongsTo(DropPoint, { foreignKey: 'dropPointId' });
 

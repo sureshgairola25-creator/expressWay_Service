@@ -21,6 +21,11 @@ const DropPoint = sequelize.define('DropPoint', {
   },
 }, {
   tableName: 'DropPoints',
+  timestamps: true,
+  underscored: true,
+  // Let the database configuration handle the timestamp columns
+  createdAt: false,
+  updatedAt: false,
 });
 
 module.exports = DropPoint;

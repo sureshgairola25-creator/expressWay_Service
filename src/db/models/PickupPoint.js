@@ -21,6 +21,8 @@ const PickupPoint = sequelize.define('PickupPoint', {
   },
 }, {
   tableName: 'PickupPoints',
+  timestamps: true,
+  underscored: true
 });
 
 module.exports = PickupPoint;

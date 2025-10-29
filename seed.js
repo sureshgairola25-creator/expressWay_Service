@@ -109,14 +109,14 @@ async function seedDatabase() {
     const carTypes = [
       { name: 'Innova Crysta', type: 'SUV', seats: 7, basePrice: 15 },
       { name: 'Swift Dzire', type: 'Sedan', seats: 5, basePrice: 12 },
-      { name: 'Honda City', type: 'Sedan', seats: 5, basePrice: 14 },
-      { name: 'Toyota Fortuner', type: 'SUV', seats: 7, basePrice: 18 },
-      { name: 'Maruti Alto', type: 'Hatchback', seats: 4, basePrice: 10 },
-      { name: 'Hyundai Creta', type: 'SUV', seats: 5, basePrice: 13 },
-      { name: 'Mahindra XUV500', type: 'SUV', seats: 7, basePrice: 16 },
-      { name: 'Volkswagen Vento', type: 'Sedan', seats: 5, basePrice: 13 },
-      { name: 'Renault Triber', type: 'MPV', seats: 7, basePrice: 11 },
-      { name: 'Tata Nexon', type: 'SUV', seats: 5, basePrice: 12 },
+      // { name: 'Honda City', type: 'Sedan', seats: 5, basePrice: 14 },
+      // { name: 'Toyota Fortuner', type: 'SUV', seats: 7, basePrice: 18 },
+      // { name: 'Maruti Alto', type: 'Hatchback', seats: 4, basePrice: 10 },
+      // { name: 'Hyundai Creta', type: 'SUV', seats: 5, basePrice: 13 },
+      // { name: 'Mahindra XUV500', type: 'SUV', seats: 7, basePrice: 16 },
+      // { name: 'Volkswagen Vento', type: 'Sedan', seats: 5, basePrice: 13 },
+      // { name: 'Renault Triber', type: 'MPV', seats: 7, basePrice: 11 },
+      // { name: 'Tata Nexon', type: 'SUV', seats: 5, basePrice: 12 },
     ];
 
     const cars = [];
@@ -124,7 +124,7 @@ async function seedDatabase() {
 
     // Create multiple cars of each type
     for (const carType of carTypes) {
-      for (let i = 0; i < 10; i++) { // 10 cars of each type
+      for (let i = 0; i < 1; i++) { // 10 cars of each type
         cars.push({
           carName: carType.name,
           carType: carType.type,
@@ -189,44 +189,44 @@ async function seedDatabase() {
       }
     }
 
-    const createdTrips = await Trip.bulkCreate(trips);
-    console.log(`✅ ${createdTrips.length} trips created for ${today.toDateString()}`);
+    // const createdTrips = await Trip.bulkCreate(trips);
+    // console.log(`✅ ${createdTrips.length} trips created for ${today.toDateString()}`);
 
     // Create seat pricing for each trip
     let totalSeatsCreated = 0;
 
-    for (const trip of createdTrips) {
-      // Find the car for this trip to get seat count
-      const car = createdCars.find(c => c.id === trip.carId);
-      const seatCount = Math.min(car.totalSeats, Math.floor(Math.random() * 3) + 4); // 4-6 seats per car
+    // for (const trip of createdTrips) {
+    //   // Find the car for this trip to get seat count
+    //   const car = createdCars.find(c => c.id === trip.carId);
+    //   const seatCount = Math.min(car.totalSeats, Math.floor(Math.random() * 3) + 4); // 4-6 seats per car
 
-      // Generate seat types and prices based on car type
-      const seatTypes = ['window', 'middle', 'aisle', 'back'];
-      const basePrice = car.carType === 'SUV' ? 18 :
-                       car.carType === 'Sedan' ? 14 :
-                       car.carType === 'Hatchback' ? 10 :
-                       car.carType === 'MPV' ? 12 : 15;
+    //   // Generate seat types and prices based on car type
+    //   const seatTypes = ['window', 'middle', 'aisle', 'back'];
+    //   const basePrice = car.carType === 'SUV' ? 18 :
+    //                    car.carType === 'Sedan' ? 14 :
+    //                    car.carType === 'Hatchback' ? 10 :
+    //                    car.carType === 'MPV' ? 12 : 15;
 
-      for (let i = 1; i <= seatCount; i++) {
-        const seatType = getRandomElement(seatTypes);
-        const priceMultiplier = seatType === 'window' ? 1.2 :
-                              seatType === 'middle' ? 0.9 :
-                              seatType === 'back' ? 0.8 : 1.0;
-        const price = Math.round(basePrice * priceMultiplier * 100) / 100;
+    //   for (let i = 1; i <= seatCount; i++) {
+    //     const seatType = getRandomElement(seatTypes);
+    //     const priceMultiplier = seatType === 'window' ? 1.2 :
+    //                           seatType === 'middle' ? 0.9 :
+    //                           seatType === 'back' ? 0.8 : 1.0;
+    //     const price = Math.round(basePrice * priceMultiplier * 100) / 100;
 
-        await SeatPricing.create({
-          tripId: trip.id,
-          seatNumber: `S${i}`,
-          seatType,
-          price,
-          isBooked: false,
-        });
+    //     await SeatPricing.create({
+    //       tripId: trip.id,
+    //       seatNumber: `S${i}`,
+    //       seatType,
+    //       price,
+    //       isBooked: false,
+    //     });
 
-        totalSeatsCreated++;
-      }
-    }
+    //     totalSeatsCreated++;
+    //   }
+    // }
 
-    console.log(`✅ ${totalSeatsCreated} seat pricing records created`);
+    // console.log(`✅ ${totalSeatsCreated} seat pricing records created`);
 
     // Log final summary
     const todayDate = today.toISOString().split('T')[0];

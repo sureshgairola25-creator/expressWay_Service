@@ -26,6 +26,8 @@ const Car = sequelize.define('Car', {
   },
 }, {
   tableName: 'Cars',
+  timestamps: true,
+  underscored: true
 });
 
 module.exports = Car;

@@ -19,6 +19,8 @@ const StartLocation = sequelize.define('StartLocation', {
   },
 }, {
   tableName: 'StartLocations',
+  timestamps: true,
+  underscored: true
 });
 
 module.exports = StartLocation;

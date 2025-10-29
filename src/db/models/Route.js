@@ -33,7 +33,11 @@ const Route = sequelize.define('Route', {
   },
 }, {
   tableName: 'Routes',
-  timestamps: true, // createdAt, updatedAt
+  timestamps: true,
+  underscored: true,
+  // Let the database configuration handle the timestamp columns
+  createdAt: false,
+  updatedAt: false,
 });
 
 module.exports = Route;

@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../database');
+const { toIST } = require('../../utils/dateUtils');
 
 const Trip = sequelize.define('Trip', {
   id: {
@@ -7,21 +8,15 @@ const Trip = sequelize.define('Trip', {
     primaryKey: true,
     autoIncrement: true,
   },
-  startLocationId: {
-    type: DataTypes.INTEGER,
+  pickupPoints: {
+    type: DataTypes.JSON,
     allowNull: false,
+    defaultValue: []
   },
-  endLocationId: {
-    type: DataTypes.INTEGER,
+  dropPoints: {
+    type: DataTypes.JSON,
     allowNull: false,
-  },
-  pickupPointId: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-  },
-  dropPointId: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
+    defaultValue: []
   },
   carId: {
     type: DataTypes.INTEGER,
@@ -30,10 +25,24 @@ const Trip = sequelize.define('Trip', {
   startTime: {
     type: DataTypes.DATE,
     allowNull: false,
+    get() {
+      const value = this.getDataValue('startTime');
+      return value ? toIST(value) : null;
+    },
+    set(value) {
+      this.setDataValue('startTime', value ? toIST(value) : null);
+    }
   },
   endTime: {
     type: DataTypes.DATE,
     allowNull: false,
+    get() {
+      const value = this.getDataValue('endTime');
+      return value ? toIST(value) : null;
+    },
+    set(value) {
+      this.setDataValue('endTime', value ? toIST(value) : null);
+    }
   },
   duration: {
     type: DataTypes.STRING,
@@ -42,14 +51,35 @@ const Trip = sequelize.define('Trip', {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
   },
+  meals: {
+    type: DataTypes.JSON,
+    allowNull: true,
+  },
 }, {
   tableName: 'Trips',
+  timestamps: true,
+  underscored: true,
+  hooks: {
+    beforeCreate: (trip) => {
+      if (trip.startTime) {
+        trip.startTime = toIST(trip.startTime);
+      }
+      if (trip.endTime) {
+        trip.endTime = toIST(trip.endTime);
+      }
+    },
+    beforeUpdate: (trip) => {
+      // Update timestamps to IST on update
+      if (trip.changed('startTime') && trip.startTime) {
+        trip.startTime = toIST(trip.startTime);
+      }
+      if (trip.changed('endTime') && trip.endTime) {
+        trip.endTime = toIST(trip.endTime);
+      }
+    }
+  }
 });
 
-// Define associations
-Trip.belongsTo(require('./StartLocation'), { foreignKey: 'startLocationId', as: 'startLocation' });
-Trip.belongsTo(require('./EndLocation'), { foreignKey: 'endLocationId', as: 'endLocation' });
-Trip.belongsTo(require('./PickupPoint'), { foreignKey: 'pickupPointId', as: 'pickupPoint' });
-Trip.belongsTo(require('./DropPoint'), { foreignKey: 'dropPointId', as: 'dropPoint' });
+// No direct associations - using JSON arrays of IDs instead
 
 module.exports = Trip;
