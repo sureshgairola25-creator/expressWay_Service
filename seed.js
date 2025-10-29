@@ -107,29 +107,33 @@ async function seedDatabase() {
 
     // Create cars with different types and capacities
     const carTypes = [
-      { name: 'Innova Crysta', type: 'SUV', seats: 7, basePrice: 15 },
-      { name: 'Swift Dzire', type: 'Sedan', seats: 5, basePrice: 12 },
-      // { name: 'Honda City', type: 'Sedan', seats: 5, basePrice: 14 },
-      // { name: 'Toyota Fortuner', type: 'SUV', seats: 7, basePrice: 18 },
-      // { name: 'Maruti Alto', type: 'Hatchback', seats: 4, basePrice: 10 },
-      // { name: 'Hyundai Creta', type: 'SUV', seats: 5, basePrice: 13 },
-      // { name: 'Mahindra XUV500', type: 'SUV', seats: 7, basePrice: 16 },
-      // { name: 'Volkswagen Vento', type: 'Sedan', seats: 5, basePrice: 13 },
-      // { name: 'Renault Triber', type: 'MPV', seats: 7, basePrice: 11 },
-      // { name: 'Tata Nexon', type: 'SUV', seats: 5, basePrice: 12 },
+      { name: 'Innova Crysta', type: 'SUV', class: 'premium', seats: 7, basePrice: 15 },
+      { name: 'Swift Dzire', type: 'Sedan', class: 'standard', seats: 5, basePrice: 12 },
+      // { name: 'Honda City', type: 'Sedan', class: 'standard', seats: 5, basePrice: 14 },
+      // { name: 'Toyota Fortuner', type: 'SUV', class: 'luxury', seats: 7, basePrice: 18 },
+      // { name: 'Maruti Alto', type: 'Hatchback', class: 'standard', seats: 4, basePrice: 10 },
+      // { name: 'Hyundai Creta', type: 'SUV', class: 'premium', seats: 5, basePrice: 13 },
+      // { name: 'Mahindra XUV500', type: 'SUV', class: 'luxury', seats: 7, basePrice: 16 },
+      // { name: 'Volkswagen Vento', type: 'Sedan', class: 'standard', seats: 5, basePrice: 13 },
+      // { name: 'Renault Triber', type: 'MPV', class: 'standard', seats: 7, basePrice: 11 },
+      // { name: 'Tata Nexon', type: 'SUV', class: 'premium', seats: 5, basePrice: 12 },
     ];
 
     const cars = [];
     let registrationCounter = 1000;
 
     // Create multiple cars of each type
+    let carCounter = 1;
     for (const carType of carTypes) {
-      for (let i = 0; i < 1; i++) { // 10 cars of each type
+      for (let i = 0; i < 1; i++) { // 1 car of each type
+        const regNumber = `DL${String(registrationCounter++).padStart(2, '0')}CA${String(Math.floor(Math.random() * 9000) + 1000).padStart(4, '0')}`;
         cars.push({
           carName: carType.name,
           carType: carType.type,
+          class: carType.class,
           totalSeats: carType.seats,
-          registrationNumber: `DL${String(registrationCounter++).padStart(2, '0')}CA${String(Math.floor(Math.random() * 9000) + 1000).padStart(4, '0')}`,
+          registrationNumber: regNumber,
+          carUniqueNumber: `CAR-${String(carCounter++).padStart(3, '0')}-${regNumber.substring(0, 4)}`,
         });
       }
     }

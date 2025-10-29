@@ -27,20 +27,57 @@ EndLocation.hasMany(Route, { foreignKey: 'endLocationId' });
 Route.belongsTo(StartLocation, { foreignKey: 'startLocationId' });
 Route.belongsTo(EndLocation, { foreignKey: 'endLocationId' });
 
-// New Associations
+// Trip Associations
 Car.hasMany(Trip, { foreignKey: 'carId' });
 Trip.belongsTo(Car, { foreignKey: 'carId' });
 
-PickupPoint.hasMany(Trip, { foreignKey: 'pickupPointId' });
-Trip.belongsTo(PickupPoint, { foreignKey: 'pickupPointId' });
+// Trip-StartLocation Association
+StartLocation.hasMany(Trip, { 
+  foreignKey: 'startLocationId',
+  as: 'tripsFrom'
+});
+Trip.belongsTo(StartLocation, { 
+  foreignKey: 'startLocationId',
+  as: 'startLocation'
+});
 
+// Trip-EndLocation Association
+EndLocation.hasMany(Trip, { 
+  foreignKey: 'endLocationId',
+  as: 'tripsTo'
+});
+Trip.belongsTo(EndLocation, { 
+  foreignKey: 'endLocationId',
+  as: 'endLocation'
+});
 
-Trip.hasMany(Seat, { foreignKey: 'tripId' });
-Seat.belongsTo(Trip, { foreignKey: 'tripId' });
+// Trip-Seat Association
+Trip.hasMany(Seat, { 
+  foreignKey: 'tripId',
+  as: 'seats'  // Explicitly set the alias to 'seats'
+});
+Seat.belongsTo(Trip, { 
+  foreignKey: 'tripId',
+  as: 'trip'  // Keep the reverse association as 'trip' for clarity
+});
 
+// Remove these if not needed as we're using JSON arrays now
+// PickupPoint.hasMany(Trip, { foreignKey: 'pickupPointId' });
+// Trip.belongsTo(PickupPoint, { foreignKey: 'pickupPointId' });
+// DropPoint.hasMany(Trip, { foreignKey: 'dropPointId' });
+// Trip.belongsTo(DropPoint, { foreignKey: 'dropPointId' });
 
-DropPoint.hasMany(Trip, { foreignKey: 'dropPointId' });
-Trip.belongsTo(DropPoint, { foreignKey: 'dropPointId' });
+Trip.belongsToMany(PickupPoint, {
+  through: "TripPickupPoints",
+  as: "pickupPointsData",
+  foreignKey: "trip_id"
+});
+
+Trip.belongsToMany(DropPoint, {
+  through: "TripDropPoints",
+  as: "dropPointsData",
+  foreignKey: "trip_id"
+});
 
 Trip.hasMany(SeatPricing, { foreignKey: 'tripId', onDelete: 'CASCADE' });
 SeatPricing.belongsTo(Trip, { foreignKey: 'tripId' });

@@ -454,169 +454,538 @@ const tripService = {
     }
   },
 
+  /*
+  1st code
   searchTrips: async (queryParams = {}) => {
     try {
       const {
         startLocation,
         endLocation,
-        from,
-        to,
         date,
-        minPrice = 0,
-        maxPrice = 10000,
-        minSeats = 1,
+        pickupPoint,
+        dropPoint,
+        minPrice,
+        maxPrice,
+        minSeats,
         timeRange,
-        sortBy = 'departureEarliest',
+        duration,
+        sortBy
       } = queryParams;
-    
-      const where = { status: 'active' }; // Only show active trips by default
-    
-      // Location Filters
-      if (startLocation) where.startLocationId = parseInt(startLocation);
-      if (endLocation) where.endLocationId = parseInt(endLocation);
-      if (from) where.startLocationId = from;
-      if (to) where.endLocationId = to;
-      
-      // Date filtering
+  
+      const where = { status: true };
+  
+      // Location filters
+      if (startLocation) where.start_location_id = parseInt(startLocation);
+      if (endLocation) where.end_location_id = parseInt(endLocation);
+  
+      // Date filtering (IST-safe)
       if (date) {
-        const startDate = new Date(date);
-        startDate.setHours(0, 0, 0, 0);
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + 1);
-        where.startTime = {
-          [Op.gte]: startDate,
-          [Op.lt]: endDate,
-        };
+        const [year, month, day] = date.split('-').map(Number);
+        const startDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+        const endDate = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0));
+        where.start_time = { [Op.gte]: startDate, [Op.lt]: endDate };
       } else {
-        // If no date specified, only show future trips
-        where.startTime = { [Op.gte]: new Date() };
+        where.start_time = { [Op.gte]: new Date() };
       }
-
-      // Include seat information
+  
+      // Include seats
       const includeSeats = {
         model: Seat,
         as: 'seats',
-        attributes: ['id', 'seatNumber', 'price', 'status', 'seatType'],
-        required: false,
+        attributes: ['id', 'seat_number', 'price', 'status', 'seat_type'],
+        required: false
       };
-
-      // Fetch trips with related data
-      const trips = await Trip.findAll({
+  
+      // Fetch trips
+      let trips = await Trip.findAll({
         where,
+        attributes: [
+          'id',
+          'start_time',
+          'end_time',
+          'duration',
+          'status',
+          'pickup_points',
+          'drop_points',
+          'meals',
+          'created_at',
+          'updated_at',
+          'car_id',
+          'start_location_id',
+          'end_location_id'
+        ],
         include: [
           {
             model: Car,
-            as: 'car',
-            attributes: ['id', 'name', 'model', 'type', 'totalSeats', 'amenities', 'registrationNumber'],
+            attributes: [
+              'id',
+              'carName',
+              'carType',
+              'class',
+              'totalSeats',
+              'carUniqueNumber',
+              'registrationNumber'
+            ],
             required: true
           },
-          { 
-            model: StartLocation, 
-            as: 'startLocation', 
-            attributes: ['id', 'name', 'address', 'city', 'state', 'pincode'] 
+          {
+            model: StartLocation,
+            as: 'startLocation',
+            attributes: ['id', 'name'],
+            required: true
           },
-          { 
-            model: EndLocation, 
-            as: 'endLocation', 
-            attributes: ['id', 'name', 'address', 'city', 'state', 'pincode'] 
+          {
+            model: EndLocation,
+            as: 'endLocation',
+            attributes: ['id', 'name'],
+            required: true
           },
-          includeSeats,
+          includeSeats
         ],
-        attributes: [
-          'id', 
-          'startTime', 
-          'endTime', 
-          'duration', 
-          'status',
-          'pickupPoints',
-          'dropPoints',
-          'meals',
-          'createdAt',
-          'updatedAt'
-        ],
-        order: [['startTime', 'ASC']]
+        order: [['start_time', 'ASC']]
       });
-    
-      // Process and format trips
-      const processedTrips = trips.map(trip => {
-        const seats = trip.seats || [];
-        const availableSeats = seats.filter(seat => seat.status === 'available');
-        const seatPrices = seats.map(seat => parseFloat(seat.price) || 0);
-        const minSeatPrice = seatPrices.length ? Math.min(...seatPrices) : 0;
-        const maxSeatPrice = seatPrices.length ? Math.max(...seatPrices) : 0;
-        
-        return {
-          id: trip.id,
-          startLocation: trip.startLocation,
-          endLocation: trip.endLocation,
-          pickupPoint: trip.pickupPoint,
-          dropPoint: trip.dropPoint,
-          car: trip.car,
-          startTime: trip.startTime,
-          endTime: trip.endTime,
-          duration: trip.duration,
-          status: trip.status,
-          availableSeats: availableSeats.length,
-          totalSeats: seats.length,
-          minSeatPrice,
-          maxSeatPrice,
-          seats: availableSeats.map(seat => ({
-            id: seat.id,
-            seatNumber: seat.seatNumber,
-            price: seat.price,
-            seatType: seat.seatType,
-            status: seat.status,
-            isAvailable: seat.status === 'available'
-          })),
-          createdAt: trip.createdAt,
-          updatedAt: trip.updatedAt
-        };
-      });
-    
-      // Apply additional filters
-      let filteredTrips = processedTrips.filter(trip => {
-        // Price filter
-        if (minPrice && trip.minSeatPrice < minPrice) return false;
-        if (maxPrice && trip.maxSeatPrice > maxPrice) return false;
-        
-        // Available seats filter
-        if (trip.availableSeats < minSeats) return false;
-        
-        // Time range filter
-        if (timeRange) {
-          const hour = new Date(trip.startTime).getHours();
-          let inRange = false;
-          if (timeRange === 'morning' && hour >= 6 && hour < 12) inRange = true;
-          if (timeRange === 'afternoon' && hour >= 12 && hour < 18) inRange = true;
-          if (timeRange === 'evening' && hour >= 18 && hour < 21) inRange = true;
-          if (timeRange === 'night' && (hour >= 21 || hour < 6)) inRange = true;
-          if (!inRange) return false;
-        }
-        
-        return true;
-      });
-    
-      // Apply sorting
-      if (sortBy === 'priceLowest') {
-        filteredTrips.sort((a, b) => a.minSeatPrice - b.minSeatPrice);
-      } else if (sortBy === 'priceHighest') {
-        filteredTrips.sort((a, b) => b.maxSeatPrice - a.maxSeatPrice);
-      } else if (sortBy === 'departureEarliest') {
-        filteredTrips.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
-      } else if (sortBy === 'departureLatest') {
-        filteredTrips.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
-      } else if (sortBy === 'seatsAvailable') {
-        filteredTrips.sort((a, b) => b.availableSeats - a.availableSeats);
+  
+      // Filter by pickup/drop if provided
+      if (pickupPoint || dropPoint) {
+        trips = trips.filter(trip => {
+          const tripData = trip.get({ plain: true });
+          const pArr = tripData.pickup_points || [];
+          const dArr = tripData.drop_points || [];
+  
+          const matchPickup =
+            !pickupPoint || pArr.includes(parseInt(pickupPoint));
+  
+          const matchDrop =
+            !dropPoint || dArr.includes(parseInt(dropPoint));
+  
+          return matchPickup && matchDrop;
+        });
       }
-    
-      return filteredTrips;
+  
+      // Helper: fetch point names
+      async function fetchPointNames(ids, Model) {
+        if (!Array.isArray(ids) || ids.length === 0) return [];
+        const items = await Model.findAll({ where: { id: ids } });
+        return items.map(p => ({ id: p.id, name: p.name }));
+      }
+  
+      // Final formatting
+      const finalTrips = [];
+      for (const trip of trips) {
+        const data = trip.get({ plain: true });
+  
+        // seats
+        const seats = data.seats || [];
+        const availableSeats = seats.filter(s => s.status === "available");
+        const seatPrices = availableSeats.map(s => parseFloat(s.price) || 0);
+        const minSeatPrice = seatPrices.length ? Math.min(...seatPrices) : 0;
+  
+        // pickup filter + fetch name
+        const pickupId = pickupPoint ? parseInt(pickupPoint) : null;
+        let pickupPoints = [];
+        if (pickupId && data.pickup_points.includes(pickupId)) {
+          pickupPoints = await fetchPointNames([pickupId], PickupPoint);
+        }
+  
+        // drop filter + fetch name
+        const dropId = dropPoint ? parseInt(dropPoint) : null;
+        let dropPoints = [];
+        if (dropId && data.drop_points.includes(dropId)) {
+          dropPoints = await fetchPointNames([dropId], DropPoint);
+        }
+  
+        // build final object
+        finalTrips.push({
+          id: data.id,
+          startLocation: data.startLocation,
+          endLocation: data.endLocation,
+          startTime: data.start_time,
+          endTime: data.end_time,
+          availableSeats: availableSeats.length,
+          pickupPoints: pickupPoints[0],
+          dropPoints: dropPoints[0],
+          meals: data.meals || [],
+          seatsInfo: seats,
+          carInfo: {
+            id: data.Car?.id,
+            name: data.Car?.carName,
+            type: data.Car?.carType,
+            class: data.Car?.class,
+            totalSeats: data.Car?.totalSeats,
+            carUniqueNumber: data.Car?.carUniqueNumber,
+            registrationNumber: data.Car?.registrationNumber
+          },
+          minSeatPrice,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at
+        });
+      }
+  
+      return finalTrips;
+  
     } catch (error) {
-      console.error('Error in searchTrips:', error);
-      throw new Error('Failed to search for trips. Please try again later.');
+      console.error("Error in searchTrips:", error);
+      throw new Error("Failed to search for trips. Please try again later.");
+    }
+  },
+  */
+  /* 2nd code*/
+  // searchTrips: async (queryParams = {}) => {
+  //   try {
+  //     const {
+  //       startLocation,
+  //       endLocation,
+  //       date,
+  //       pickupPoint,
+  //       dropPoint
+  //     } = queryParams;
+  
+  //     const where = { status: true };
+  
+  //     // Location filters
+  //     if (startLocation) where.start_location_id = parseInt(startLocation);
+  //     if (endLocation) where.end_location_id = parseInt(endLocation);
+  
+  //     // Date filter (IST)
+  //     if (date) {
+  //       const [year, month, day] = date.split("-").map(Number);
+  //       const startDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+  //       const endDate = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0));
+  
+  //       where.start_time = {
+  //         [Op.gte]: startDate,
+  //         [Op.lt]: endDate
+  //       };
+  //     } else {
+  //       where.start_time = { [Op.gte]: new Date() };
+  //     }
+  
+  //     // Include seats
+  //     const includeSeats = {
+  //       model: Seat,
+  //       as: "seats",
+  //       attributes: ["id", "seat_number", "price", "status", "seat_type"],
+  //       required: false
+  //     };
+  
+  //     // Fetch trips
+  //     let trips = await Trip.findAll({
+  //       where,
+  //       attributes: [
+  //         "id",
+  //         "start_time",
+  //         "end_time",
+  //         "duration",
+  //         "status",
+  //         "pickup_points",
+  //         "drop_points",
+  //         "meals",
+  //         "created_at",
+  //         "updated_at",
+  //         "car_id",
+  //         "start_location_id",
+  //         "end_location_id"
+  //       ],
+  //       include: [
+  //         {
+  //           model: Car,
+  //           attributes: [
+  //             "id",
+  //             "carName",
+  //             "carType",
+  //             "class",
+  //             "totalSeats",
+  //             "carUniqueNumber",
+  //             "registrationNumber"
+  //           ],
+  //           required: true
+  //         },
+  //         {
+  //           model: StartLocation,
+  //           as: "startLocation",
+  //           attributes: ["id", "name"],
+  //           required: true
+  //         },
+  //         {
+  //           model: EndLocation,
+  //           as: "endLocation",
+  //           attributes: ["id", "name"],
+  //           required: true
+  //         },
+  //         includeSeats
+  //       ],
+  //       order: [["start_time", "ASC"]]
+  //     });
+  
+  //     const pickupId = pickupPoint ? parseInt(pickupPoint) : null;
+  //     const dropId = dropPoint ? parseInt(dropPoint) : null;
+  
+  //     // Filter by pickup & drop points only by ID validation
+  //     trips = trips.filter(trip => {
+  //       const data = trip.get({ plain: true });
+  
+  //       const pickupArr = Array.isArray(data.pickup_points)
+  //         ? data.pickup_points
+  //         : [];
+  //       const dropArr = Array.isArray(data.drop_points)
+  //         ? data.drop_points
+  //         : [];
+  
+  //       const pickupValid = !pickupId || pickupArr.includes(pickupId);
+  //       const dropValid = !dropId || dropArr.includes(dropId);
+  
+  //       return pickupValid && dropValid;
+  //     });
+  
+  //     // Fetch pickup/drop names only IF they match
+  //     let pickupPointRecord = null;
+  //     let dropPointRecord = null;
+  
+  //     if (pickupId) {
+  //       pickupPointRecord = await PickupPoint.findOne({
+  //         where: { id: pickupId },
+  //         attributes: ["id", "name"]
+  //       });
+  //     }
+  
+  //     if (dropId) {
+  //       dropPointRecord = await DropPoint.findOne({
+  //         where: { id: dropId },
+  //         attributes: ["id", "name"]
+  //       });
+  //     }
+  
+  //     // Final formatting
+  //     return trips.map(trip => {
+  //       const t = trip.get({ plain: true });
+  
+  //       const seats = t.seats || [];
+  
+  //       const availableSeats = seats.filter(s => s.status === "available");
+  
+  //       const seatPrices = availableSeats.map(s => parseFloat(s.price) || 0);
+  //       const minSeatPrice =
+  //         seatPrices.length > 0 ? Math.min(...seatPrices) : 0;
+  
+  //       return {
+  //         id: t.id,
+  //         startLocation: t.startLocation?.name || "",
+  //         endLocation: t.endLocation?.name || "",
+  //         startTime: t.start_time,
+  //         endTime: t.end_time,
+  
+  //         pickupPoint: pickupId && pickupPointRecord
+  //           ? { id: pickupPointRecord.id, name: pickupPointRecord.name }
+  //           : null,
+  
+  //         dropPoint: dropId && dropPointRecord
+  //           ? { id: dropPointRecord.id, name: dropPointRecord.name }
+  //           : null,
+  
+  //         availableSeats: availableSeats.length,
+  
+  //         seatsInfo: seats.map(s => ({
+  //           id: s.id,
+  //           seatNumber: s.seat_number,
+  //           price: s.price,
+  //           seatType: s.seat_type,
+  //           isBooked: s.status !== "available"
+  //         })),
+  
+  //         meals: t.meals || [],
+  
+  //         carInfo: {
+  //           id: t.Car?.id,
+  //           name: t.Car?.carName,
+  //           type: t.Car?.carType,
+  //           class: t.Car?.class,
+  //           totalSeats: t.Car?.totalSeats,
+  //           registrationNumber: t.Car?.registrationNumber,
+  //           carUniqueNumber: t.Car?.carUniqueNumber
+  //         },
+  
+  //         minSeatPrice,
+  
+  //         createdAt: t.created_at,
+  //         updatedAt: t.updated_at
+  //       };
+  //     });
+  //   } catch (error) {
+  //     console.error("Error in searchTrips:", error);
+  //     throw new Error("Failed to search for trips. Please try again later.");
+  //   }
+  // },
+  
+  searchTrips: async (queryParams = {}) => {
+    try {
+      const {
+        startLocation,
+        endLocation,
+        date,
+        pickupPoint,
+        dropPoint,
+        minPrice,
+        maxPrice,
+        minSeats,
+        timeRange,
+        sortBy
+      } = queryParams;
+  
+      const where = { status: true };
+  
+      if (startLocation) where.start_location_id = parseInt(startLocation);
+      if (endLocation) where.end_location_id = parseInt(endLocation);
+  
+      if (date) {
+        const [year, month, day] = date.split("-").map(Number);
+        const startDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+        const endDate = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0));
+        where.start_time = { [Op.gte]: startDate, [Op.lt]: endDate };
+      } else {
+        where.start_time = { [Op.gte]: new Date() };
+      }
+  
+      const includeSeats = {
+        model: Seat,
+        as: "seats",
+        attributes: ["id", "seat_number", "price", "status", "seat_type"],
+        required: false
+      };
+  
+      let trips = await Trip.findAll({
+        where,
+        attributes: [
+          "id",
+          "start_time",
+          "end_time",
+          "duration",
+          "status",
+          "pickup_points",
+          "drop_points",
+          "meals",
+          "created_at",
+          "updated_at",
+          "car_id",
+          "start_location_id",
+          "end_location_id"
+        ],
+        include: [
+          {
+            model: Car,
+            attributes: [
+              "id",
+              "carName",
+              "carType",
+              "class",
+              "totalSeats",
+              "carUniqueNumber",
+              "registrationNumber"
+            ],
+            required: true
+          },
+          {
+            model: StartLocation,
+            as: "startLocation",
+            attributes: ["id", "name"],
+            required: true
+          },
+          {
+            model: EndLocation,
+            as: "endLocation",
+            attributes: ["id", "name"],
+            required: true
+          },
+          includeSeats
+        ]
+      });
+  
+      // Filter by pickup & drop points and fetch names
+      const filteredTrips = [];
+      for (const trip of trips) {
+        const t = trip.get({ plain: true });
+        const availableSeats = (t.seats || []).filter(s => s.status === "available");
+        const seatPrices = availableSeats.map(s => parseFloat(s.price) || 0);
+        const minSeatPrice = seatPrices.length ? Math.min(...seatPrices) : 0;
+  
+        const pickupIdInt = pickupPoint ? parseInt(pickupPoint) : null;
+        let pickupPointsArr = [];
+        if (pickupIdInt && t.pickup_points.includes(pickupIdInt)) {
+          pickupPointsArr = await fetchPointNames([pickupIdInt], PickupPoint);
+        }
+  
+        const dropIdInt = dropPoint ? parseInt(dropPoint) : null;
+        let dropPointsArr = [];
+        if (dropIdInt && t.drop_points.includes(dropIdInt)) {
+          dropPointsArr = await fetchPointNames([dropIdInt], DropPoint);
+        }
+  
+        // Skip trip if pickup/drop point filter doesn't match
+        if ((pickupIdInt && pickupPointsArr.length === 0) || (dropIdInt && dropPointsArr.length === 0)) {
+          continue;
+        }
+  
+        // Backend filters: price, seats, time
+        if (minPrice && minSeatPrice < minPrice) continue;
+        if (maxPrice && minSeatPrice > maxPrice) continue;
+        if (minSeats && availableSeats.length < minSeats) continue;
+  
+        if (timeRange) {
+          const hour = new Date(t.start_time).getHours();
+          if (timeRange === "morning" && (hour < 6 || hour >= 12)) continue;
+          if (timeRange === "afternoon" && (hour < 12 || hour >= 18)) continue;
+          if (timeRange === "evening" && (hour < 18 || hour >= 21)) continue;
+          if (timeRange === "night" && !(hour >= 21 || hour < 6)) continue;
+        }
+  
+        filteredTrips.push({
+          id: t.id,
+          startLocation: t.startLocation,
+          endLocation: t.endLocation,
+          startTime: t.start_time,
+          endTime: t.end_time,
+          duration: t.duration,
+          availableSeats: availableSeats.length,
+          seatsInfo: availableSeats,
+          pickupPoint: pickupPointsArr[0],
+          dropPoint: dropPointsArr[0],
+          meals: t.meals || [],
+          carInfo: {
+            id: t.Car?.id,
+            name: t.Car?.carName,
+            type: t.Car?.carType,
+            class: t.Car?.class,
+            totalSeats: t.Car?.totalSeats,
+            registrationNumber: t.Car?.registrationNumber,
+            carUniqueNumber: t.Car?.carUniqueNumber
+          },
+          minSeatPrice,
+          createdAt: t.created_at,
+          updatedAt: t.updated_at
+        });
+      }
+  
+      // Sorting
+      if (sortBy === "priceLowHigh") filteredTrips.sort((a, b) => a.minSeatPrice - b.minSeatPrice);
+      else if (sortBy === "priceHighLow") filteredTrips.sort((a, b) => b.minSeatPrice - a.minSeatPrice);
+      else if (sortBy === "departureEarliest") filteredTrips.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+      else if (sortBy === "departureLatest") filteredTrips.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+  
+      return filteredTrips;
+  
+    } catch (error) {
+      console.error("Error in searchTrips:", error);
+      throw new Error("Failed to search for trips. Please try again later.");
+    }
+    
+    // Helper function
+    async function fetchPointNames(ids, Model) {
+      if (!Array.isArray(ids) || ids.length === 0) return [];
+      const items = await Model.findAll({ where: { id: ids } });
+      return items.map(p => ({ id: p.id, name: p.name }));
     }
   },
   
-
+  
   getSeatsForTrip: async (tripId) => {
     const trip = await Trip.findByPk(tripId, {
       include: [

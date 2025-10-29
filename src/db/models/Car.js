@@ -14,6 +14,23 @@ const Car = sequelize.define('Car', {
   carType: {
     type: DataTypes.STRING,
   },
+  class: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'standard',
+    validate: {
+      isIn: [['standard', 'premium', 'classic', 'luxury', 'business']]
+    }
+  },
+  carUniqueNumber: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true,
+    validate: {
+      notEmpty: true,
+      len: [3, 20]
+    }
+  },
   totalSeats: {
     type: DataTypes.INTEGER,
     allowNull: false,

@@ -1,0 +1,29 @@
+{
+  "development": {
+    "username": "root",
+    "password": "QHjDQobyEJVVogLMrFpONuwjNZXMweER",
+    "database": "railway",
+    "host": "caboose.proxy.rlwy.net",
+    "port": 44770,
+    "dialect": "mysql",
+    "timezone": "+05:30"
+  },
+  "test": {
+    "username": "root",
+    "password": "QHjDQobyEJVVogLMrFpONuwjNZXMweER",
+    "database": "railway",
+    "host": "caboose.proxy.rlwy.net",
+    "port": 44770,
+    "dialect": "mysql",
+    "timezone": "+05:30"
+  },
+  "production": {
+    "username": "root",
+    "password": "QHjDQobyEJVVogLMrFpONuwjNZXMweER",
+    "database": "railway",
+    "host": "caboose.proxy.rlwy.net",
+    "port": 44770,
+    "dialect": "mysql",
+    "timezone": "+05:30"
+  }
+}
