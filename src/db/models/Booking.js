@@ -31,10 +31,22 @@ const Booking = sequelize.define('Booking', {
     type: DataTypes.ENUM('active', 'initiated', 'cancelled', 'completed'),
     defaultValue: 'active',
   },
-  // Future-proofing fields (commented out for now)
-  // transactionId: {
-  //   type: DataTypes.STRING,
-  // },
+  paymentOrderId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Payment order ID from payment gateway'
+  },
+  paymentSessionId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Payment session ID from payment gateway'
+  },
+  paymentExpiry: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'When the payment session expires and seats should be released'
+  },
+  // Future-proofing fields
   // couponId: {
   //   type: DataTypes.INTEGER,
   // },

@@ -8,6 +8,19 @@ const cashfreeApiKey = process.env.CASHFREE_API_KEY;
 const cashfreeApiSecret = process.env.CASHFREE_API_SECRET;
 const cashfreeApiVersion = process.env.CASHFREE_API_VERSION;
 
+// Map Cashfree statuses to internal statuses
+const mapPaymentStatus = (status) => {
+  const statusMap = {
+    'PAID': 'paid',
+    'SUCCESS': 'paid',
+    'FAILED': 'failed',
+    'CANCELLED': 'failed',
+    'PENDING': 'pending',
+    'PROCESSING': 'pending'
+  };
+  return statusMap[status] || status.toLowerCase();
+};
+
 const paymentService = {
   createOrder: async (orderDetails) => {
     const { orderAmount,customer_id, customerEmail, customerPhone, bookingId } = orderDetails;
@@ -34,7 +47,7 @@ const paymentService = {
         ...(customerEmail && { customer_email: customerEmail }),
       },
       order_meta: {
-        return_url: `http://localhost:3000/bookings/${customer_id}`,
+        return_url: `http://localhost:5173/bookings/${bookingId}`,
       },
     };
 
@@ -123,6 +136,64 @@ const paymentService = {
 
     return booking;
   },
+  
+  getOrderStatus: async (orderId) => {
+    try {
+      if (!orderId) {
+        throw new BadRequest('Order ID is required');
+      }
+
+      // Find the booking by order ID
+      const booking = await Booking.findOne({ 
+        where: { orderId },
+        include: [
+          { model: SeatPricing, as: 'seatPricing' }
+        ]
+      });
+
+      if (!booking) {
+        throw new NotFound('Booking not found');
+      }
+
+      // If already paid, return the booking
+      if (booking.paymentStatus === 'paid') {
+        return booking;
+      }
+
+      // Call Cashfree API to get order status
+      const url = `${cashfreeApiUrl}/orders/${orderId}`;
+      const headers = {
+        'x-client-id': cashfreeApiKey,
+        'x-client-secret': cashfreeApiSecret,
+        'x-api-version': cashfreeApiVersion,
+        'Content-Type': 'application/json'
+      };
+
+      const response = await axios.get(url, { headers });
+      const orderData = response.data;
+
+      // Map the status
+      const paymentStatus = mapPaymentStatus(orderData.payment_status || orderData.order_status);
+
+      // Update booking if status has changed
+      if (booking.paymentStatus !== paymentStatus) {
+        await booking.update({
+          paymentStatus,
+          providerResponse: orderData,
+          lastCheckedAt: new Date()
+        });
+      }
+
+      return booking;
+    } catch (error) {
+      console.error('Error checking order status:', error);
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Status code:', error.response.status);
+      }
+      throw error;
+    }
+  }
 };
 
 module.exports = paymentService;

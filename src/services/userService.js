@@ -14,6 +14,9 @@ const generateToken = (user) => {
   });
 };
 
+// In-memory token blacklist
+const tokenBlacklist = new Set();
+
 const userService = {
   registerUser: async (userData) => {
     const { firstName, lastName, email, phoneNo, password } = userData;
@@ -114,7 +117,7 @@ const userService = {
   },
 
   updateProfile: async (userId, updateData) => {
-    const { firstName, lastName, phoneNo } = updateData;
+    const { firstName, lastName, phoneNo, email, gender, ageRange } = updateData;
 
     const user = await User.findByPk(userId);
     if (!user) {
@@ -124,6 +127,10 @@ const userService = {
     user.firstName = firstName || user.firstName;
     user.lastName = lastName || user.lastName;
     user.phoneNo = phoneNo || user.phoneNo;
+    user.email = email || user.email;
+    user.gender = gender || user.gender;
+    user.ageRange = ageRange || user.ageRange;
+
 
     await user.save();
     user.password = undefined; // Exclude password from response
@@ -220,6 +227,86 @@ const userService = {
 
     return { success: true, message: 'Password set successfully' };
   },
+
+  getAllUsers: async () => {
+    return await User.findAll({where: {isVerified: true,role: 'user'}});
+  },
+
+  getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
+    const { Trip, Booking, Car, StartLocation, EndLocation } = require('../db/models');
+    const offset = (page - 1) * limit;
+    const now = new Date();
+
+    try {
+      // Fetch user's bookings with related trip, car, and location data
+      const { count, rows: bookings } = await Booking.findAndCountAll({
+        where: { userId },
+        include: [
+          {
+            model: Trip,
+            include: [
+              { model: Car },
+              { 
+                model: StartLocation,
+                as: 'startLocation'
+              },
+              { 
+                model: EndLocation,
+                as: 'endLocation'
+              }
+            ]
+          }
+        ],
+        order: [
+          ['id', 'DESC']
+        ],
+        offset,
+        limit: parseInt(limit, 10)
+      });
+
+      // Format the response according to the required structure
+      const formatRide = (booking) => {
+        const trip = booking.Trip; // Note the capital T since we're not using an alias
+        const startTime = new Date(trip.startTime);
+        
+        // Map booking status to the required format
+        let status = 'Confirmed';
+        if (booking.bookingStatus === 'cancelled') {
+          status = 'Cancelled';
+        } else if (booking.bookingStatus === 'completed') {
+          status = 'Completed';
+        } else if (booking.bookingStatus === 'initiated' && booking.paymentStatus === 'pending') {
+          status = 'Confirmed';
+        }
+
+        // Format date and time
+        const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+        const timeOptions = { hour: '2-digit', minute: '2-digit', hour12: true };
+        
+        return {
+          id: booking.id,
+          status,
+          cabType: `${trip.Car.carType} (${trip.Car.carName})`,
+          date: startTime.toLocaleDateString('en-US', dateOptions),
+          time: startTime.toLocaleTimeString('en-US', timeOptions),
+          pickup: trip.startLocation?.name || 'Pickup Location',
+          dropoff: trip.endLocation?.name || 'Dropoff Location',
+          fare: parseFloat(booking.totalAmount)
+        };
+      };
+
+      // Format all rides
+      const rides = bookings.map(booking => formatRide(booking));
+
+      return {
+        success: true,
+        rides
+      };
+    } catch (error) {
+      console.error('Error in getUserRides:', error);
+      throw error;
+    }
+  }
 };
 
 module.exports = userService;

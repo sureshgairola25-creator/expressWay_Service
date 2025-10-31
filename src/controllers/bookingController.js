@@ -4,23 +4,17 @@ const asyncHandler = require('../../middleware/async');
 
 const bookingController = {
   initiateBooking: asyncHandler(async (req, res) => {
-    const booking = await bookingService.initiateBooking(req.body);
-
-    // Generate payment link
-    const paymentResult = await paymentService.createOrder({
-      orderAmount: booking.totalAmount,
+    const result = await bookingService.initiateBooking({
+      ...req.body,
       customerEmail: req.body.customerEmail,
       customerPhone: req.body.customerPhone,
-      customer_id: req.body.userId,
-      customer_age: req.body.age,
-      bookingId: booking.id,
     });
 
     res.status(201).json({
       success: true,
       message: 'Booking initiated successfully',
-      bookingId: booking.id,
-      sessionId: paymentResult.payment_session_id,
+      bookingId: result.id,
+      sessionId: result.paymentSessionId,
     });
   }),
 
@@ -30,6 +24,14 @@ const bookingController = {
       success: true,
       message: 'Booking created successfully',
       data: booking,
+    });
+  }),
+
+  getBookingList: asyncHandler(async (req, res) => {
+    const bookings = await bookingService.getBookingList();
+    res.status(200).json({
+      success: true,
+      data: bookings,
     });
   }),
 

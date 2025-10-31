@@ -31,9 +31,14 @@ router.post('/login', userController.login);
 router.post('/google-login', userController.googleLogin);
 
 // @route   GET /api/users/me
-// @desc    Get current user profile
+// @desc    Get current user's profile
 // @access  Private
 router.get('/me', protect, userController.getMe);
+
+// @route   GET /api/users/:userId/rides
+// @desc    Get user's rides (upcoming and past)
+// @access  Private
+router.get('/:userId/rides', userController.getUserRides);
 
 // @route   PUT /api/users/update/:id
 // @desc    Update user profile
@@ -44,5 +49,15 @@ router.put('/update/:id', protect, userController.updateProfile);
 // @desc    Set password for verified user
 // @access  Public
 router.post('/set-password', userController.setPassword);
+
+// @route   POST /api/users/logout
+// @desc    Logout user / invalidate token
+// @access  Private
+router.post('/logout', protect, userController.logout);
+
+// @route   GET /users
+// @desc    Get all users (Admin only)
+// @access  Private/Admin
+router.get('/users', userController.getUsers);
 
 module.exports = router;

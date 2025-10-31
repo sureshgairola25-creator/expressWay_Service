@@ -23,9 +23,18 @@ const paymentController = {
 
   getBookingDetails: asyncHandler(async (req, res) => {
     const { bookingId } = req.params;
-    const result = await paymentService.getBookingDetails(bookingId);
-    res.status(200).json({ success: true, data: result });
+    const booking = await paymentService.getBookingDetails(bookingId);
+    res.status(200).json({ success: true, data: booking });
   }),
+  
+  getOrderStatus: asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
+    const order = await paymentService.getOrderStatus(orderId);
+    res.status(200).json({ 
+      success: true, 
+      data: order 
+    });
+  })
 };
 
 module.exports = paymentController;
