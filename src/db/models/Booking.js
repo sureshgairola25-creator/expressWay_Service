@@ -46,6 +46,7 @@ const Booking = sequelize.define('Booking', {
     allowNull: true,
     comment: 'When the payment session expires and seats should be released'
   },
+<<<<<<< HEAD
   pickupPointId: {
     type: DataTypes.INTEGER,
     allowNull: true,
@@ -58,6 +59,15 @@ const Booking = sequelize.define('Booking', {
     field: 'drop_point_id',
     comment: 'The drop point where the passenger will alight'
   },
+=======
+  // Future-proofing fields
+  // couponId: {
+  //   type: DataTypes.INTEGER,
+  // },
+  // passengerDetails: {
+  //   type: DataTypes.JSON,
+  // },
+>>>>>>> ed1247f4fead951b16cfd06c0d90ff1358e7b373
 }, {
   tableName: 'Bookings',
 });

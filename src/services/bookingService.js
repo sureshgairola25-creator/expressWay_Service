@@ -179,18 +179,19 @@ const bookingService = {
               as: 'endLocation',
               attributes: ['name'],
             },
-            // {
-            //   model: PickupPoint,
-            //   as: 'pickupPointsData',
-            //   attributes: ['id', 'name'],
-            //   through: { attributes: [] } // Exclude the join table attributes
-            // },
-            // {
-            //   model: DropPoint,
-            //   as: 'dropPointsData',
-            //   attributes: ['id', 'name'],
-            //   through: { attributes: [] } // Exclude the join table attributes
-            // }
+            {
+              model: PickupPoint,
+              as: 'pickupPointsData',
+              attributes: ['id', 'name'],
+              through: { attributes: [] } // Exclude the join table attributes
+            },
+            {
+              model: DropPoint,
+              as: 'dropPointsData',
+              attributes: ['id', 'name'],
+              through: { attributes: [] } // Exclude the join table attributes
+            }
+            // Remove PickupPoint and DropPoint from here as they're not directly associated with Trip
           ],
         },
       ],
