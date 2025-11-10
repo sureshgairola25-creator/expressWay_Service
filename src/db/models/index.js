@@ -67,17 +67,17 @@ Seat.belongsTo(Trip, {
 // DropPoint.hasMany(Trip, { foreignKey: 'dropPointId' });
 // Trip.belongsTo(DropPoint, { foreignKey: 'dropPointId' });
 
-Trip.belongsToMany(PickupPoint, {
-  through: "TripPickupPoints",
-  as: "pickupPointsData",
-  foreignKey: "trip_id"
-});
+// Trip.belongsToMany(PickupPoint, {
+//   through: "TripPickupPoints",
+//   as: "pickupPointsData",
+//   foreignKey: "trip_id"
+// });
 
-Trip.belongsToMany(DropPoint, {
-  through: "TripDropPoints",
-  as: "dropPointsData",
-  foreignKey: "trip_id"
-});
+// Trip.belongsToMany(DropPoint, {
+//   through: "TripDropPoints",
+//   as: "dropPointsData",
+//   foreignKey: "trip_id"
+// });
 
 Trip.hasMany(SeatPricing, { foreignKey: 'tripId', onDelete: 'CASCADE' });
 SeatPricing.belongsTo(Trip, { foreignKey: 'tripId' });

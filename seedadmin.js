@@ -20,7 +20,7 @@ async function seedAdminAccount() {
       lastName: 'User',
       email: 'admin@expressway.com',
       phoneNo: '9999999999',
-      password: '$2a$12$k.xT3wFo95qBpDzPkWQpwuDfBq0ocX.34Fecq1Bkw1fmoP/vBpkiy', // "password123"
+      password: '$2a$12$toTw/ZKRK4/7M/WecX/GYO9Pw4UihgfWqSz2gtN0owBRRLlbj6U.2', // "password123"
       provider: 'manual',
       isVerified: true,
       role: 'admin',
@@ -30,37 +30,9 @@ async function seedAdminAccount() {
 
     console.log('✅ Admin account created successfully');
     console.log(`📧 Email: ${adminUser.email}`);
-    console.log(`🔑 Password: password123`);
+    console.log(`🔑 Password: Suresh99@@`);
     console.log(`👤 Role: ${adminUser.role}`);
     console.log(`✅ Verified: ${adminUser.isVerified}`);
-
-    // Create additional admin accounts for testing
-    const additionalAdmins = await User.bulkCreate([
-      {
-        firstName: 'System',
-        lastName: 'Administrator',
-        email: 'system@expressway.com',
-        phoneNo: '9999999997',
-        password: '$2a$12$4bTPKxlLakQSW26OHkejnOt.KviEZzYNlSoiZBAKH9IlXZpNX9P1W', // "password123"
-        provider: 'manual',
-        isVerified: true,
-        role: 'admin',
-        gender: 'Male',
-        ageRange: '35-40',
-      }
-    ]);
-
-    console.log(`✅ ${additionalAdmins.length} additional admin accounts created`);
-
-    // Log all admin credentials
-    console.log('\n🎉 ADMIN SEEDING COMPLETE!');
-    console.log('📊 ADMIN ACCOUNTS CREATED:');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('👑 MAIN ADMIN:');
-    console.log(`   Email: admin@expressway.com`);
-    console.log(`   Password: password123`);
-    console.log(`   Name: Admin User`);
-    console.log(`   Phone: 9999999999`);
     console.log('');
 
   } catch (error) {

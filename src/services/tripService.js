@@ -139,9 +139,20 @@ const tripService = {
       };
     }
     
-    // First, get all distinct trips with basic info
-    const trips = await Trip.findAll({
+    // First, get all distinct trip IDs that match the criteria
+    const tripIds = await Trip.findAll({
       where,
+      attributes: ['id'],
+      raw: true
+    }).then(trips => trips.map(trip => trip.id));
+
+    if (tripIds.length === 0) {
+      return [];
+    }
+
+    // Then fetch the full trip data with includes
+    const trips = await Trip.findAll({
+      where: { id: { [Op.in]: tripIds } },
       include: [
         {
           model: Car,
@@ -149,14 +160,10 @@ const tripService = {
           required: true,
         }
       ],
-      attributes: ['id', 'pickupPoints', 'dropPoints', 'startTime', 'endTime', 'duration', 'status'],
-      group: ['Trip.id'], // Ensure we get distinct trips
-      raw: true,
-      nest: true
+      attributes: ['id', 'pickupPoints', 'dropPoints', 'startTime', 'endTime', 'duration', 'status']
     });
 
-    // Get all seat data separately to avoid duplicates
-    const tripIds = trips.map(trip => trip.id);
+    // Get all seat data for these trips
     const allSeats = await Seat.findAll({
       where: {
         tripId: { [Op.in]: tripIds }
@@ -848,7 +855,7 @@ const tripService = {
       const includeSeats = {
         model: Seat,
         as: "seats",
-        attributes: ["id", "seat_number", "price", "status", "seat_type"],
+        attributes: ["id", "seat_number", "price", "status", "seat_type","isBooked"],
         required: false
       };
   
@@ -903,7 +910,8 @@ const tripService = {
       const filteredTrips = [];
       for (const trip of trips) {
         const t = trip.get({ plain: true });
-        const availableSeats = (t.seats || []).filter(s => s.status === "available");
+        const leftSeats = (t.seats || []).filter(s => s.isBooked === false);
+        const availableSeats = (t.seats || [])
         const seatPrices = availableSeats.map(s => parseFloat(s.price) || 0);
         const minSeatPrice = seatPrices.length ? Math.min(...seatPrices) : 0;
   
@@ -944,7 +952,7 @@ const tripService = {
           startTime: t.start_time,
           endTime: t.end_time,
           duration: t.duration,
-          availableSeats: availableSeats.length,
+          availableSeats: leftSeats.length,
           seatsInfo: availableSeats,
           pickupPoint: pickupPointsArr[0],
           dropPoint: dropPointsArr[0],

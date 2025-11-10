@@ -1,11 +1,20 @@
 const { sequelize, StartLocation, EndLocation, Route, Car, Trip, SeatPricing, Seat, PickupPoint, DropPoint } = require('./src/db/models');
 
 async function seedDatabase() {
+  const transaction = await sequelize.transaction();
+  
   try {
     console.log('🚀 Starting database seeding...');
-
-    // Sync database to ensure tables match models (recreates tables if needed)
-    await sequelize.sync({ force: true });
+    
+    // Disable foreign key checks
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 0', { raw: true });
+    
+    // Sync all models with the database
+    await sequelize.authenticate();
+    console.log('✅ MySQL connected successfully!');
+    
+    // Drop all tables and recreate them
+    await sequelize.sync({ force: true, transaction });
     console.log('✅ Database synced successfully');
 
     // Step 1: Disable foreign key checks for safe truncation
@@ -19,6 +28,8 @@ async function seedDatabase() {
     // await Route.destroy({ where: {} });
     await EndLocation.destroy({ where: {} });
     await StartLocation.destroy({ where: {} });
+    await PickupPoint.destroy({ where: {} });
+    await DropPoint.destroy({ where: {} });
 
     // Also delete from Seat table if it exists
     if (Seat) {
@@ -52,56 +63,56 @@ async function seedDatabase() {
     };
 
     // Create start locations
-    const startLocations = await StartLocation.bulkCreate([
-      { name: 'New Delhi', status: true },
-      { name: 'Gurgaon', status: true },
-      { name: 'Noida', status: true },
-      { name: 'Faridabad', status: true },
-      { name: 'Ghaziabad', status: true },
-    ]);
+    // const startLocations = await StartLocation.bulkCreate([
+    //   { name: 'New Delhi', status: true },
+    //   { name: 'Gurgaon', status: true },
+    //   { name: 'Noida', status: true },
+    //   { name: 'Faridabad', status: true },
+    //   { name: 'Ghaziabad', status: true },
+    // ]);
 
-    // Create pickup points
-    const pickupPoints = await PickupPoint.bulkCreate([
-      { name: 'Botanical Garden', startLocationId: startLocations[0].id, status: true },
-      { name: 'Sector 62', startLocationId: startLocations[0].id, status: true },
-      { name: 'Akshardham', startLocationId: startLocations[0].id, status: true },
-      { name: 'Cyber City', startLocationId: startLocations[1].id, status: true },
-      { name: 'Golf Course Road', startLocationId: startLocations[1].id, status: true },
-      { name: 'Sector 18', startLocationId: startLocations[2].id, status: true },
-      { name: 'Sector 15', startLocationId: startLocations[2].id, status: true },
-      { name: 'Sector 37', startLocationId: startLocations[3].id, status: true },
-      { name: 'Neharpar', startLocationId: startLocations[4].id, status: true },
-    ]);
+    // // Create pickup points
+    // const pickupPoints = await PickupPoint.bulkCreate([
+    //   { name: 'Botanical Garden', startLocationId: startLocations[0].id, status: true },
+    //   { name: 'Sector 62', startLocationId: startLocations[0].id, status: true },
+    //   { name: 'Akshardham', startLocationId: startLocations[0].id, status: true },
+    //   { name: 'Cyber City', startLocationId: startLocations[1].id, status: true },
+    //   { name: 'Golf Course Road', startLocationId: startLocations[1].id, status: true },
+    //   { name: 'Sector 18', startLocationId: startLocations[2].id, status: true },
+    //   { name: 'Sector 15', startLocationId: startLocations[2].id, status: true },
+    //   { name: 'Sector 37', startLocationId: startLocations[3].id, status: true },
+    //   { name: 'Neharpar', startLocationId: startLocations[4].id, status: true },
+    // ]);
 
-    // Create end locations
-    const endLocations = await EndLocation.bulkCreate([
-      { name: 'Rishikesh', startLocationId: startLocations[0].id, status: true },
-      { name: 'Dehradun', startLocationId: startLocations[0].id, status: true },
-      { name: 'Haridwar', startLocationId: startLocations[1].id, status: true },
-      { name: 'Mussoorie', startLocationId: startLocations[1].id, status: true },
-      { name: 'Chandigarh', startLocationId: startLocations[2].id, status: true },
-      { name: 'Shimla', startLocationId: startLocations[3].id, status: true },
-      { name: 'Manali', startLocationId: startLocations[4].id, status: true },
-    ]);
+    // // Create end locations
+    // const endLocations = await EndLocation.bulkCreate([
+    //   { name: 'Rishikesh', startLocationId: startLocations[0].id, status: true },
+    //   { name: 'Dehradun', startLocationId: startLocations[0].id, status: true },
+    //   { name: 'Haridwar', startLocationId: startLocations[1].id, status: true },
+    //   { name: 'Mussoorie', startLocationId: startLocations[1].id, status: true },
+    //   { name: 'Chandigarh', startLocationId: startLocations[2].id, status: true },
+    //   { name: 'Shimla', startLocationId: startLocations[3].id, status: true },
+    //   { name: 'Manali', startLocationId: startLocations[4].id, status: true },
+    // ]);
 
-    // Create drop points
-    const dropPoints = await DropPoint.bulkCreate([
-      { name: 'Har Ki Pauri', endLocationId: endLocations[0].id, status: true },
-      { name: 'Jawalapur', endLocationId: endLocations[0].id, status: true },
-      { name: 'Bahadarabad', endLocationId: endLocations[0].id, status: true },
-      { name: 'Raiwala', endLocationId: endLocations[1].id, status: true },
-      { name: 'Nepali Farm', endLocationId: endLocations[1].id, status: true },
-      { name: 'Haridwar Junction', endLocationId: endLocations[2].id, status: true },
-      { name: 'Roorkee', endLocationId: endLocations[2].id, status: true },
-      { name: 'Mall Road', endLocationId: endLocations[3].id, status: true },
-      { name: 'Kempty Falls', endLocationId: endLocations[3].id, status: true },
-      { name: 'Sector 17', endLocationId: endLocations[4].id, status: true },
-      { name: 'Rock Garden', endLocationId: endLocations[4].id, status: true },
-      { name: 'The Ridge', endLocationId: endLocations[5].id, status: true },
-      { name: 'Mall Road Shimla', endLocationId: endLocations[5].id, status: true },
-      { name: 'Old Manali', endLocationId: endLocations[6].id, status: true },
-      { name: 'Solang Valley', endLocationId: endLocations[6].id, status: true },
-    ]);
+    // // Create drop points
+    // const dropPoints = await DropPoint.bulkCreate([
+    //   { name: 'Har Ki Pauri', endLocationId: endLocations[0].id, status: true },
+    //   { name: 'Jawalapur', endLocationId: endLocations[0].id, status: true },
+    //   { name: 'Bahadarabad', endLocationId: endLocations[0].id, status: true },
+    //   { name: 'Raiwala', endLocationId: endLocations[1].id, status: true },
+    //   { name: 'Nepali Farm', endLocationId: endLocations[1].id, status: true },
+    //   { name: 'Haridwar Junction', endLocationId: endLocations[2].id, status: true },
+    //   { name: 'Roorkee', endLocationId: endLocations[2].id, status: true },
+    //   { name: 'Mall Road', endLocationId: endLocations[3].id, status: true },
+    //   { name: 'Kempty Falls', endLocationId: endLocations[3].id, status: true },
+    //   { name: 'Sector 17', endLocationId: endLocations[4].id, status: true },
+    //   { name: 'Rock Garden', endLocationId: endLocations[4].id, status: true },
+    //   { name: 'The Ridge', endLocationId: endLocations[5].id, status: true },
+    //   { name: 'Mall Road Shimla', endLocationId: endLocations[5].id, status: true },
+    //   { name: 'Old Manali', endLocationId: endLocations[6].id, status: true },
+    //   { name: 'Solang Valley', endLocationId: endLocations[6].id, status: true },
+    // ]);
 
     console.log('✅ Locations created');
 
@@ -138,8 +149,8 @@ async function seedDatabase() {
       }
     }
 
-    const createdCars = await Car.bulkCreate(cars);
-    console.log(`✅ ${createdCars.length} cars created`);
+    // const createdCars = await Car.bulkCreate(cars);
+    // console.log(`✅ ${createdCars.length} cars created`);
 
     // Generate 50 trips for today
     const trips = [];
@@ -241,14 +252,26 @@ async function seedDatabase() {
     console.log(`✅ ${totalSeatsCreated} seats priced`);
     console.log(`✅ All trips scheduled for ${today.toDateString()}`);
 
+    // Enable foreign key checks
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1', { raw: true });
+    
+    // Commit the transaction
+    await transaction.commit();
+    
+    console.log('✅ Database seeding completed successfully!');
   } catch (error) {
+    // Rollback the transaction in case of error
+    await transaction.rollback();
     console.error('❌ Error seeding database:', error);
   } finally {
-    // Close Sequelize connection
-    await sequelize.close();
-    console.log('🔒 Database connection closed');
-    process.exit(0);
-  }
+    try {
+      await sequelize.close();
+      console.log('🔒 Database connection closed');
+    } catch (err) {
+      console.error('❌ Error closing database connection:', err);
+    }
+  }  
+  process.exit(0);
 }
 
 seedDatabase();

@@ -18,4 +18,6 @@ router.get('/details/:bookingId', bookingController.getBookingDetails);
 // Cancel a booking
 router.put('/:id/cancel', bookingController.cancelBooking);
 
+router.get('/list', bookingController.getBookingList);
+
 module.exports = router;

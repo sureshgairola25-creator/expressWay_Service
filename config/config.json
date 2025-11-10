@@ -1,29 +1,87 @@
 {
   "development": {
-    "username": "root",
-    "password": "QHjDQobyEJVVogLMrFpONuwjNZXMweER",
-    "database": "railway",
-    "host": "caboose.proxy.rlwy.net",
-    "port": 44770,
+    "username": "4WfekBDLeQozF4w.root",
+    "password": "TC2zutz9QVylRx6P",
+    "database": "test",
+    "host": "gateway01.ap-southeast-1.prod.aws.tidbcloud.com",
+    "port": 4000,
     "dialect": "mysql",
-    "timezone": "+05:30"
+    "timezone": "+05:30",
+    "dialectOptions": {
+      "ssl": {
+        "require": true,
+        "rejectUnauthorized": true,
+        "minVersion": "TLSv1.2",
+        "ca": "/home/lap1002per/Documents/expressWay_Service/config/tidb-ca.pem"
+      },
+      "supportBigNumbers": true,
+      "bigNumberStrings": true,
+      "typeCast": true,
+      "decimalNumbers": true,
+      "connectTimeout": 10000
+    },
+    "pool": {
+      "max": 5,
+      "min": 0,
+      "acquire": 30000,
+      "idle": 10000
+    }
   },
   "test": {
-    "username": "root",
-    "password": "QHjDQobyEJVVogLMrFpONuwjNZXMweER",
-    "database": "railway",
-    "host": "caboose.proxy.rlwy.net",
-    "port": 44770,
+    "username": "4WfekBDLeQozF4w.root",
+    "password": "<PASSWORD>",
+    "database": "test",
+    "host": "gateway01.ap-southeast-1.prod.aws.tidbcloud.com",
+    "port": 4000,
     "dialect": "mysql",
-    "timezone": "+05:30"
+    "timezone": "+05:30",
+    "dialectOptions": {
+      "ssl": {
+        "require": true,
+        "rejectUnauthorized": true,
+        "minVersion": "TLSv1.2",
+        "ca": "/home/lap1002per/Documents/expressWay_Service/config/tidb-ca.pem"
+      },
+      "supportBigNumbers": true,
+      "bigNumberStrings": true,
+      "typeCast": true,
+      "decimalNumbers": true,
+      "connectTimeout": 10000
+    },
+    "pool": {
+      "max": 5,
+      "min": 0,
+      "acquire": 30000,
+      "idle": 10000
+    }
   },
   "production": {
-    "username": "root",
-    "password": "QHjDQobyEJVVogLMrFpONuwjNZXMweER",
-    "database": "railway",
-    "host": "caboose.proxy.rlwy.net",
-    "port": 44770,
+    "username": "4WfekBDLeQozF4w.root",
+    "password": "<PASSWORD>",
+    "database": "test",
+    "host": "gateway01.ap-southeast-1.prod.aws.tidbcloud.com",
+    "port": 4000,
     "dialect": "mysql",
-    "timezone": "+05:30"
+    "timezone": "+05:30",
+    "dialectOptions": {
+      "ssl": {
+        "require": true,
+        "rejectUnauthorized": true,
+        "minVersion": "TLSv1.2",
+        "ca": "/home/lap1002per/Documents/expressWay_Service/config/tidb-ca.pem"
+      },
+      "supportBigNumbers": true,
+      "bigNumberStrings": true,
+      "typeCast": true,
+      "decimalNumbers": true,
+      "connectionLimit": 20,
+      "connectTimeout": 60000
+    },
+    "pool": {
+      "max": 10,
+      "min": 2,
+      "acquire": 60000,
+      "idle": 10000
+    }
   }
 }

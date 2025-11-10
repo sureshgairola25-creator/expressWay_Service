@@ -30,14 +30,7 @@ const { csrfProtection } = require('./middleware/csrf');
 // Import database connection
 const sequelize = require('./src/db/database');
 
-// Sync database (creates/updates tables based on models)
-sequelize.sync({ alter: true })
-  .then(() => {
-    console.log('✅ Database synced successfully');
-  })
-  .catch((error) => {
-    console.error('❌ Database sync failed:', error);
-  });
+// Database sync is handled in database.js with minimal logging
 
 const db = require('./src/db/models');
 
@@ -47,6 +40,9 @@ const indexRouter = require('./src/index');
 // Initialize express app
 const app = express();
 
+// Serve static files from the public directory
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Set security HTTP headers
 app.use(
   helmet.contentSecurityPolicy({
@@ -55,6 +51,7 @@ app.use(
       "script-src": ["'self'", "https://sdk.cashfree.com"],
       "frame-src": ["'self'", "https://sdk.cashfree.com"],
       "form-action": ["'self'", "https://sandbox.cashfree.com"],
+      "img-src": ["'self'", "data:", "blob:", process.env.APP_URL || 'http://localhost:3000'],
     },
   })
 );

@@ -18,4 +18,9 @@ router.post('/verify', paymentController.verifyPayment);
 // @access  Public (should be protected in a real app)
 router.get('/success/:bookingId', paymentController.getBookingDetails);
 
+// @route   GET /api/payment/order-status/:orderId
+// @desc    Get the status of a payment order
+// @access  Public (should be protected in a real app)
+router.get('/order-status/:orderId', paymentController.getOrderStatus);
+
 module.exports = router;

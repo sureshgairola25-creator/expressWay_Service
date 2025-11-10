@@ -7,14 +7,15 @@ const location = require('./routes/location');
 const route = require('./routes/routeRoutes');
 const car = require('./routes/carRoutes');
 const trip = require('./routes/tripRoutes');
-
+const admin = require('./routes/admin');
+const couponRoutes = require('./routes/couponRoutes');
 const router = express.Router();
 
 // router.use('/', root);
 
 // router.use('/user', user);
-// router.use('/admin', admin);
 // API routes
+router.use('/admin', admin);
 router.use('/route', route);
 router.use('/locations', location);
 router.use('/cars', car);
@@ -23,6 +24,7 @@ router.use('/seat-pricing', seatPricing);
 router.use('/booking', booking);
 router.use('/payment', payment);
 router.use('/user', user);
+router.use('/coupons', couponRoutes);
 
 
 module.exports = router;

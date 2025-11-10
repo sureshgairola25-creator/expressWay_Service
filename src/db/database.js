@@ -2,17 +2,55 @@ const { Sequelize } = require("sequelize");
 const dotenv = require("dotenv");
 const { toIST } = require("../utils/dateUtils");
 const { DataTypes } = require('sequelize');
+const fs = require('fs');
+const path = require('path');
 
 dotenv.config();
 
-// Enable NO_ZERO_DATE mode for MySQL to handle '0000-00-00' dates
+// Load config based on environment
+const env = process.env.NODE_ENV || 'development';
+const config = require('../../config/config.json')[env];
+
+// Read SSL certificate
+const sslCert = fs.readFileSync(path.join(__dirname, '../../config/isrgrootx1.pem'));
+
 const sequelizeConfig = {
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT || 3306,
+  host: config.host,
+  port: config.port || 4000,
+  username: config.username,
+  password: config.password,
+  database: config.database,
   dialect: "mysql",
   timezone: "+05:30",
+  // Retry configuration
+  retry: {
+    max: 5, // Maximum number of retries
+    timeout: 60000, // Timeout in ms
+    match: [
+      /SequelizeConnectionError/,
+      /SequelizeConnectionRefusedError/,
+      /SequelizeHostNotFoundError/,
+      /SequelizeHostNotReachableError/,
+      /SequelizeInvalidConnectionError/,
+      /SequelizeConnectionTimedOutError/
+    ],
+  },
   dialectOptions: {
+    ssl: {
+      require: true,
+      rejectUnauthorized: true,
+      minVersion: 'TLSv1.2',
+      ca: sslCert.toString()
+    },
+    connectTimeout: 10000, // 10 seconds timeout for connection
     dateStrings: true,
+    typeCast: true,
+    supportBigNumbers: true,
+    bigNumberStrings: true,
+    // Set SQL mode to handle only_full_group_by
+    query: { 
+      sql: 'SET SESSION sql_mode=(SELECT REPLACE(@@sql_mode,\'ONLY_FULL_GROUP_BY\',\'\'));' 
+    },
     typeCast: function (field, next) {
       if (field.type === 'DATETIME' || field.type === 'TIMESTAMP') {
         const value = field.string();
@@ -35,49 +73,44 @@ const sequelizeConfig = {
 };
 
 // Create Sequelize instance with the configuration
-const sequelize = new Sequelize(
-  process.env.DB_NAME,
-  process.env.DB_USER,
-  process.env.DB_PASSWORD,
-  sequelizeConfig
-);
+const sequelize = new Sequelize(sequelizeConfig);
 
-// Test connection
-(async () => {
-  try {
-    await sequelize.authenticate();
-    console.log("✅ MySQL connected successfully!");
-  } catch (error) {
-    console.error("❌ MySQL connection failed:", error);
-    process.exit(1);
-  }
-})();
+// Test the connection with retries
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 5000; // 5 seconds
 
-// Sync all models with the database
-(async () => {
-  try {
-    // Use sync with alter: true but prevent dropping columns
-    await sequelize.sync({ 
-      alter: { 
-        drop: false,  // Don't drop columns
-        // Add any other alter options if needed
-      },
-      // Skip creating the table if it already exists
-      // This prevents the 'table already exists' error
-      // but still allows for column additions/modifications
-      // through the alter option above
-      // @ts-ignore - force is not in the type definition but works
-      force: false,   // Don't drop tables
-      // @ts-ignore - match is not in the type definition but works
-      match: /^[^_].*$/ // Don't sync sequelize meta tables
-    });
+// const testConnection = async (retryCount = 0) => {
+//   try {
+//     await sequelize.authenticate();
+//     console.log('✅ Database connection has been established successfully.');
     
-    console.log("✅ Database synchronized successfully!");
-  } catch (error) {
-    console.error("❌ Database sync failed:", error);
-    // Try to continue even if sync fails
-    console.warn("⚠️ Continuing with existing database schema...");
-  }
-})();
+//     // Sync all models with minimal logging
+//     try {
+//       await sequelize.sync({
+//         alter: false,  // Disable altering tables
+//         force: false,  // Don't drop tables
+//         logging: false, // Disable all SQL logging
+//         hooks: false   // Disable hooks logging
+//       });
+//       console.log('✅ Database connected');
+//     } catch (syncError) {
+//       console.error('❌ Database sync error');
+//       if (process.env.NODE_ENV === 'development') {
+//         console.error(syncError);
+//       }
+//     }
+//   } catch (error) {
+//     if (retryCount < MAX_RETRIES) {
+//       console.log(`⚠️ Connection attempt ${retryCount + 1} failed. Retrying in ${RETRY_DELAY/1000} seconds...`);
+//       await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+//       return testConnection(retryCount + 1);
+//     }
+//     console.error('❌ Unable to connect to the database after multiple attempts:', error);
+//     console.warn("⚠️ Continuing with existing database schema...");
+//   }
+// };
+
+// Initialize the database connection
+// testConnection().catch(console.error);
 
 module.exports = sequelize;
