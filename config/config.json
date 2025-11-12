@@ -1,24 +1,16 @@
 {
   "development": {
-    "username": "4WfekBDLeQozF4w.root",
-    "password": "TC2zutz9QVylRx6P",
-    "database": "test",
-    "host": "gateway01.ap-southeast-1.prod.aws.tidbcloud.com",
-    "port": 4000,
+    "username": "dbuser",
+    "password": "Welcome@2025",
+    "database": "mydb",
+    "host": "65.1.253.52",
+    "port": 3306,
     "dialect": "mysql",
     "timezone": "+05:30",
     "dialectOptions": {
       "ssl": {
-        "require": true,
-        "rejectUnauthorized": true,
-        "minVersion": "TLSv1.2",
-        "ca": "/home/lap1002per/Documents/expressWay_Service/config/tidb-ca.pem"
-      },
-      "supportBigNumbers": true,
-      "bigNumberStrings": true,
-      "typeCast": true,
-      "decimalNumbers": true,
-      "connectTimeout": 10000
+        "rejectUnauthorized": false
+      }
     },
     "pool": {
       "max": 5,
