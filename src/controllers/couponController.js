@@ -1,4 +1,4 @@
-const { Coupon, sequelize } = require('../db/models');
+const { Coupon } = require('../db/models');
 const { handleUpload, deleteFile } = require('../utils/fileUpload');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
@@ -12,30 +12,46 @@ exports.createCoupon = [
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        // If there are validation errors, delete the uploaded file if exists
         if (req.file) {
-          deleteFile(req.body.imageUrl);
+          deleteFile(req.file.path);
         }
         return res.status(400).json({ errors: errors.array() });
       }
 
+      // Validate required fields
+      const requiredFields = ['code', 'discount_type', 'discount_value', 'start_date', 'end_date'];
+      const missingFields = requiredFields.filter(field => !req.body[field]);
+      
+      if (missingFields.length > 0) {
+        if (req.file) {
+          deleteFile(req.file.path);
+        }
+        return res.status(400).json({
+          success: false,
+          message: `Missing required fields: ${missingFields.join(', ')}`
+        });
+      }
+
       const {
         code,
-        description,
-        discountType,
-        discountValue,
-        minOrderAmount,
-        maxDiscountAmount,
-        startDate,
-        endDate,
+        description = null,
+        discount_type: discountType,
+        discount_value: discountValue,
+        min_order_amount: minOrderAmount = null,
+        max_discount_amount: maxDiscountAmount = null,
+        start_date: startDate,
+        end_date: endDate,
         status = true,
-        usageLimitPerUser,
-        totalUsageLimit
+        usage_limit_per_user: usageLimitPerUser = null,
+        total_usage_limit: totalUsageLimit = null,
       } = req.body;
 
+      // Handle file upload
+      const imageUrl = req.file ? req.file.path : null;
+
       // Check if coupon code already exists
-      const codeExists = await Coupon.isCodeUnique(code);
-      if (!codeExists) {
+      const existingCoupon = await Coupon.findOne({ where: { code: code.toUpperCase() } });
+      if (existingCoupon) {
         if (req.file) {
           deleteFile(req.body.imageUrl);
         }
@@ -56,20 +72,27 @@ exports.createCoupon = [
         });
       }
 
-      const coupon = await Coupon.create({
+      // Prepare coupon data
+      const couponData = {
         code: code.toUpperCase(),
         description,
-        discountType,
-        discountValue: parseFloat(discountValue),
-        minOrderAmount: minOrderAmount ? parseFloat(minOrderAmount) : null,
-        maxDiscountAmount: maxDiscountAmount ? parseFloat(maxDiscountAmount) : null,
-        startDate,
-        endDate,
-        status,
-        usageLimitPerUser: usageLimitPerUser ? parseInt(usageLimitPerUser) : null,
-        totalUsageLimit: totalUsageLimit ? parseInt(totalUsageLimit) : null,
-        imageUrl: req.body.imageUrl || null
-      });
+        discount_type: discountType,
+        discount_value: parseFloat(discountValue),
+        min_order_amount: minOrderAmount ? parseFloat(minOrderAmount) : null,
+        start_date: new Date(startDate),
+        end_date: new Date(endDate),
+        status: Boolean(status),
+        usage_limit_per_user: usageLimitPerUser ? parseInt(usageLimitPerUser) : null,
+        total_usage_limit: totalUsageLimit ? parseInt(totalUsageLimit) : null,
+        image_url: imageUrl
+      };
+
+      // Add max_discount_amount only if provided
+      if (maxDiscountAmount) {
+        couponData.max_discount_amount = parseFloat(maxDiscountAmount);
+      }
+
+      const coupon = await Coupon.create(couponData);
 
       res.status(201).json({
         success: true,
@@ -77,14 +100,35 @@ exports.createCoupon = [
       });
     } catch (error) {
       // Clean up uploaded file if there's an error
-      if (req.file) {
-        deleteFile(req.body.imageUrl);
+      if (req.file && req.file.path) {
+        try {
+          await deleteFile(req.file.path);
+        } catch (err) {
+          console.error('Error deleting uploaded file:', err);
+        }
       }
+      
       console.error('Create Coupon Error:', error);
+      
+      // Handle validation errors
+      if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
+        const errors = error.errors.map(err => ({
+          field: err.path,
+          message: err.message
+        }));
+        
+        return res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors
+        });
+      }
+      
+      // Handle other errors
       res.status(500).json({
         success: false,
-        message: 'Server error',
-        error: error.message
+        message: 'Failed to create coupon',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }
   }
@@ -101,7 +145,7 @@ exports.updateCoupon = [
       if (!errors.isEmpty()) {
         // If there are validation errors, delete the uploaded file if exists
         if (req.file) {
-          deleteFile(req.body.imageUrl);
+          deleteFile(req.body.image_url);
         }
         return res.status(400).json({ errors: errors.array() });
       }
@@ -110,22 +154,22 @@ exports.updateCoupon = [
       const {
         code,
         description,
-        discountType,
-        discountValue,
-        minOrderAmount,
-        maxDiscountAmount,
-        startDate,
-        endDate,
+        discount_type,
+        discount_value,
+        min_order_amount,
+        max_discount_amount,
+        start_date,
+        end_date,
         status,
-        usageLimitPerUser,
-        totalUsageLimit
+        usage_limit_per_user,
+        total_usage_limit
       } = req.body;
 
       // Find the coupon
       let coupon = await Coupon.findByPk(id);
       if (!coupon) {
         if (req.file) {
-          deleteFile(req.body.imageUrl);
+          deleteFile(req.body.image_url);
         }
         return res.status(404).json({
           success: false,
@@ -154,29 +198,29 @@ exports.updateCoupon = [
       const updateData = {
         ...(code && { code: code.toUpperCase() }),
         ...(description !== undefined && { description }),
-        ...(discountType && { discountType }),
-        ...(discountValue && { discountValue: parseFloat(discountValue) }),
-        ...(minOrderAmount !== undefined && { 
-          minOrderAmount: minOrderAmount ? parseFloat(minOrderAmount) : null 
+        ...(discount_type !== undefined && { discount_type }),
+        ...(discount_value !== undefined && { discount_value: parseFloat(discount_value) }),
+        ...(min_order_amount !== undefined && { 
+          min_order_amount: min_order_amount ? parseFloat(min_order_amount) : null 
         }),
-        ...(maxDiscountAmount !== undefined && { 
-          maxDiscountAmount: maxDiscountAmount ? parseFloat(maxDiscountAmount) : null 
+        ...(max_discount_amount !== undefined && { 
+          max_discount_amount: max_discount_amount ? parseFloat(max_discount_amount) : null 
         }),
-        ...(startDate && { startDate }),
-        ...(endDate && { endDate }),
+        ...(start_date && { start_date }),
+        ...(end_date && { end_date }),
         ...(status !== undefined && { status }),
-        ...(usageLimitPerUser !== undefined && { 
-          usageLimitPerUser: usageLimitPerUser ? parseInt(usageLimitPerUser) : null 
+        ...(usage_limit_per_user !== undefined && { 
+          usage_limit_per_user: usage_limit_per_user ? parseInt(usage_limit_per_user) : null 
         }),
-        ...(totalUsageLimit !== undefined && { 
-          totalUsageLimit: totalUsageLimit ? parseInt(totalUsageLimit) : null 
+        ...(total_usage_limit !== undefined && { 
+          total_usage_limit: total_usage_limit ? parseInt(total_usage_limit) : null 
         }),
-        ...(req.body.imageUrl && { imageUrl: req.body.imageUrl })
+        ...(req.body.image_url && { image_url: req.body.image_url })
       };
 
       // Validate maxDiscountAmount for percentage coupons
-      if ((discountType || coupon.discountType) === 'PERCENTAGE' && 
-          (updateData.maxDiscountAmount === undefined ? !coupon.maxDiscountAmount : !updateData.maxDiscountAmount)) {
+      if ((discount_type || coupon.discount_type) === 'PERCENTAGE' && 
+          (updateData.max_discount_amount === undefined ? !coupon.max_discount_amount : !updateData.max_discount_amount)) {
         if (req.file) {
           deleteFile(req.body.imageUrl);
         }
@@ -274,7 +318,7 @@ exports.getCoupons = async (req, res) => {
     
     const { count, rows: coupons } = await Coupon.findAndCountAll({
       where: whereClause,
-      order: [['createdAt', 'DESC']],
+      order: [['created_at', 'DESC']],
       limit: parseInt(limit),
       offset: parseInt(offset)
     });

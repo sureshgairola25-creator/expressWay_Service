@@ -5,7 +5,7 @@ module.exports = (sequelize, DataTypes) => {
   class Coupon extends Model {
     static associate(models) {
       // Define associations here
-      Coupon.hasMany(models.Booking, {
+      this.hasMany(models.Booking, {
         foreignKey: 'couponId',
         as: 'bookings'
       });
@@ -20,13 +20,13 @@ module.exports = (sequelize, DataTypes) => {
       const now = new Date();
       return (
         this.status &&
-        new Date(this.startDate) <= now &&
-        new Date(this.endDate) >= now
+        new Date(this.start_date) <= now &&
+        new Date(this.end_date) >= now
       );
     }
 
     isValidForAmount(amount) {
-      if (this.minOrderAmount && amount < this.minOrderAmount) {
+      if (this.min_order_amount && amount < this.min_order_amount) {
         return false;
       }
       return true;
@@ -39,13 +39,13 @@ module.exports = (sequelize, DataTypes) => {
 
       let discount = 0;
       
-      if (this.discountType === 'PERCENTAGE') {
-        discount = (amount * this.discountValue) / 100;
-        if (this.maxDiscountAmount && discount > this.maxDiscountAmount) {
-          discount = this.maxDiscountAmount;
+      if (this.discount_type === 'PERCENTAGE') {
+        discount = (amount * this.discount_value) / 100;
+        if (this.max_discount_amount && discount > this.max_discount_amount) {
+          discount = this.max_discount_amount;
         }
       } else {
-        discount = Math.min(this.discountValue, amount);
+        discount = Math.min(this.discount_value, amount);
       }
 
       return parseFloat(discount.toFixed(2));
@@ -70,41 +70,47 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
-    discountType: {
+    discount_type: {
       type: DataTypes.ENUM('PERCENTAGE', 'FLAT'),
-      allowNull: false
+      allowNull: false,
+      field: 'discount_type'
     },
-    discountValue: {
+    discount_value: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
+      field: 'discount_value',
       validate: {
         min: 0.01
       }
     },
-    minOrderAmount: {
+    min_order_amount: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
+      field: 'min_order_amount',
       validate: {
         min: 0
       }
     },
-    maxDiscountAmount: {
+    max_discount_amount: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
+      field: 'max_discount_amount',
       validate: {
         min: 0
       }
     },
-    startDate: {
-      type: DataTypes.DATE,
-      allowNull: false
-    },
-    endDate: {
+    start_date: {
       type: DataTypes.DATE,
       allowNull: false,
+      field: 'start_date'
+    },
+    end_date: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      field: 'end_date',
       validate: {
         isAfterStartDate(value) {
-          if (new Date(value) <= new Date(this.startDate)) {
+          if (new Date(value) <= new Date(this.start_date)) {
             throw new Error('End date must be after start date');
           }
         }
@@ -112,49 +118,51 @@ module.exports = (sequelize, DataTypes) => {
     },
     status: {
       type: DataTypes.BOOLEAN,
-      defaultValue: true
+      defaultValue: true,
+      field: 'status'
     },
-    usageLimitPerUser: {
+    usage_limit_per_user: {
       type: DataTypes.INTEGER,
       allowNull: true,
+      field: 'usage_limit_per_user',
       validate: {
         min: 1
       }
     },
-    totalUsageLimit: {
+    total_usage_limit: {
       type: DataTypes.INTEGER,
       allowNull: true,
+      field: 'total_usage_limit',
       validate: {
         min: 1
       }
     },
-    totalUsed: {
+    total_used: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
+      field: 'total_used',
       validate: {
         min: 0
       }
     },
-    imageUrl: {
+    image_url: {
       type: DataTypes.STRING,
       allowNull: true,
-      validate: {
-        isUrl: true
-      }
-    }
+      field: 'image_url'
+    },
+    // Timestamps are handled by Sequelize options below
   }, {
     sequelize,
+    tableName: 'coupons',
     modelName: 'Coupon',
-    tableName: 'Coupons',
     timestamps: true,
-    paranoid: false,
+    underscored: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
     indexes: [
       {
-        fields: ['code'],
-        unique: true
-      },
-      {
-        fields: ['status', 'startDate', 'endDate']
+        name: 'coupons_status_start_date_end_date',
+        fields: ['status', 'start_date', 'end_date']
       }
     ]
   });

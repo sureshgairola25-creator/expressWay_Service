@@ -11,6 +11,8 @@ const Booking = require('./Booking');
 const BookedSeat = require('./BookedSeat');
 const SeatPricing = require('./SeatPricing');
 const User = require('./User');
+const CouponModel = require('./coupon');
+const Coupon = CouponModel(sequelize, require('sequelize').DataTypes);
 
 // Associations
 StartLocation.hasMany(PickupPoint, { foreignKey: 'startLocationId' });
@@ -107,7 +109,8 @@ const db = {
   SeatPricing,
   Booking,
   BookedSeat,
-  User
+  User,
+  Coupon
 };
 
 module.exports = db;
