@@ -41,6 +41,12 @@ const CashfreeWebhook = require('./src/controllers/cashfreeWebhook');
 // Initialize express app
 const app = express();
 
+
+app.post(
+  "/cashfree/webhook",
+  express.raw({ type: "*/*" }),
+  CashfreeWebhook
+);
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -119,7 +125,6 @@ app.set('view engine', 'ejs');
 
 // Mount routes
 app.use('/', indexRouter);
-app.use('/cashfree/webhook', CashfreeWebhook);
 
 // Global error handling middleware - must be before 404 handler
 app.use(errorHandler);
