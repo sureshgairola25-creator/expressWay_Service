@@ -28,8 +28,8 @@ const Booking = sequelize.define('Booking', {
     defaultValue: 'pending',
   },
   bookingStatus: {
-    type: DataTypes.ENUM('active', 'initiated', 'cancelled', 'completed'),
-    defaultValue: 'active',
+    type: DataTypes.ENUM('confirmed', 'initiated', 'cancelled', 'completed'),
+    defaultValue: 'initiated',
   },
   paymentOrderId: {
     type: DataTypes.STRING,
@@ -58,6 +58,17 @@ const Booking = sequelize.define('Booking', {
     field: 'drop_point_id',
     comment: 'The drop point where the passenger will alight'
   },
+  selectedMeal: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    field: 'selected_meal',
+  },
+  priceBreakdown: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: {},
+  },
+  
   // Future-proofing fields
   // couponId: {
   //   type: DataTypes.INTEGER,

@@ -28,11 +28,20 @@ const bookingController = {
   }),
 
   getBookingList: asyncHandler(async (req, res) => {
-    const bookings = await bookingService.getBookingList();
-    res.status(200).json({
-      success: true,
-      data: bookings,
-    });
+    try {
+      // Get user ID from query params if provided, otherwise pass null to get all bookings
+      const userId = req.query.userId ? parseInt(req.query.userId) : null;
+      const bookings = await bookingService.getBookingList(userId);
+      res.status(200).json({
+        success: true,
+        data: bookings,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message || 'Failed to fetch bookings'
+      });
+    }
   }),
 
   getUserBookings: asyncHandler(async (req, res) => {

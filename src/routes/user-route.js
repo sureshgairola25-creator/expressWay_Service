@@ -38,7 +38,7 @@ router.get('/me', protect, userController.getMe);
 // @route   GET /api/users/:userId/rides
 // @desc    Get user's rides (upcoming and past)
 // @access  Private
-router.get('/:userId/rides', userController.getUserRides);
+router.get('/rides/:userId', userController.getUserRides);
 
 // @route   PUT /api/users/update/:id
 // @desc    Update user profile

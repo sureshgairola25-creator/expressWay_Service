@@ -63,29 +63,72 @@ Seat.belongsTo(Trip, {
   as: 'trip'  // Keep the reverse association as 'trip' for clarity
 });
 
-// Remove these if not needed as we're using JSON arrays now
-// PickupPoint.hasMany(Trip, { foreignKey: 'pickupPointId' });
-// Trip.belongsTo(PickupPoint, { foreignKey: 'pickupPointId' });
-// DropPoint.hasMany(Trip, { foreignKey: 'dropPointId' });
-// Trip.belongsTo(DropPoint, { foreignKey: 'dropPointId' });
+// Define many-to-many relationship between Trip and PickupPoint
+Trip.belongsToMany(PickupPoint, {
+  through: 'TripPickupPoints',
+  as: 'pickupPointsData',
+  foreignKey: 'tripId',
+  otherKey: 'pickupPointId'
+});
 
-// Trip.belongsToMany(PickupPoint, {
-//   through: "TripPickupPoints",
-//   as: "pickupPointsData",
-//   foreignKey: "trip_id"
-// });
+// Define many-to-many relationship between Trip and DropPoint
+Trip.belongsToMany(DropPoint, {
+  through: 'TripDropPoints',
+  as: 'dropPointsData',
+  foreignKey: 'tripId',
+  otherKey: 'dropPointId'
+});
 
-// Trip.belongsToMany(DropPoint, {
-//   through: "TripDropPoints",
-//   as: "dropPointsData",
-//   foreignKey: "trip_id"
-// });
 
-Trip.hasMany(SeatPricing, { foreignKey: 'tripId', onDelete: 'CASCADE' });
-SeatPricing.belongsTo(Trip, { foreignKey: 'tripId' });
+// Define reverse relationships
+PickupPoint.belongsToMany(Trip, {
+  through: 'TripPickupPoints',
+  as: 'trips',
+  foreignKey: 'pickupPointId',
+  otherKey: 'tripId'
+});
 
-Trip.hasMany(Booking, { foreignKey: 'tripId', onDelete: 'CASCADE' });
-Booking.belongsTo(Trip, { foreignKey: 'tripId' });
+DropPoint.belongsToMany(Trip, {
+  through: 'TripDropPoints',
+  as: 'trips',
+  foreignKey: 'dropPointId',
+  otherKey: 'tripId'
+});
+
+// SeatPricing relationship with Trip
+Trip.hasMany(SeatPricing, { 
+  foreignKey: 'tripId', 
+  onDelete: 'CASCADE' 
+});
+SeatPricing.belongsTo(Trip, { 
+  foreignKey: 'tripId' 
+});
+
+// Booking-Trip Associations
+Trip.hasMany(Booking, { 
+  foreignKey: 'tripId',
+  as: 'bookings',
+  onDelete: 'CASCADE' 
+});
+
+Booking.belongsTo(Trip, { 
+  foreignKey: 'tripId',
+  as: 'trip'
+});
+
+// Direct associations for pickup and drop points in Booking
+Booking.belongsTo(PickupPoint, { 
+  foreignKey: 'pickupPointId', 
+  as: 'pickupPoint',
+  targetKey: 'id'
+});
+
+Booking.belongsTo(DropPoint, { 
+  foreignKey: 'dropPointId', 
+  as: 'dropPoint',
+  targetKey: 'id'
+});
+
 
 Booking.hasMany(BookedSeat, { foreignKey: 'bookingId', onDelete: 'CASCADE' });
 BookedSeat.belongsTo(Booking, { foreignKey: 'bookingId' });
@@ -93,8 +136,15 @@ BookedSeat.belongsTo(Booking, { foreignKey: 'bookingId' });
 BookedSeat.belongsTo(Trip, { foreignKey: 'tripId', onDelete: 'CASCADE' });
 
 // User-Booking Associations
-User.hasMany(Booking, { foreignKey: 'userId' });
-Booking.belongsTo(User, { foreignKey: 'userId' });
+User.hasMany(Booking, { 
+  foreignKey: 'userId',
+  as: 'bookings' 
+});
+
+Booking.belongsTo(User, { 
+  foreignKey: 'userId',
+  as: 'user' 
+});
 
 const db = {
   sequelize,

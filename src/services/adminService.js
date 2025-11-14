@@ -35,12 +35,13 @@ const adminService = {
   // join Booking->Trip->StartLocation & EndLocation, group by start+end
   const revenueByRouteRaw = await Booking.findAll({
     attributes: [
-      [Sequelize.literal("CONCAT(`Trip->startLocation`.`name`, ' → ', `Trip->endLocation`.`name`)"), 'route'],
+      [Sequelize.literal("CONCAT(`trip->startLocation`.`name`, ' → ', `trip->endLocation`.`name`)"), 'route'],
       [Sequelize.fn('SUM', Sequelize.col('Booking.total_amount')), 'total'],
     ],
     include: [
       {
         model: Trip,
+        as: 'trip',  // Add this line to specify the alias
         attributes: [],
         include: [
           { model: StartLocation, as: 'startLocation', attributes: [] },

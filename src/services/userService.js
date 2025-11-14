@@ -5,6 +5,7 @@ const { Conflict, Unauthorized, BadRequest, NotFound } = require('http-errors');
 const { OAuth2Client } = require('google-auth-library');
 const { sendEmail } = require('../lib/email');
 const { sendSMS } = require('../lib/sms');
+const { calculateDuration } = require('../utils/dateUtils');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -233,7 +234,7 @@ const userService = {
   },
 
   getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
-    const { Trip, Booking, Car, StartLocation, EndLocation } = require('../db/models');
+    const { Trip, Booking, Car, StartLocation, EndLocation, PickupPoint, DropPoint } = require('../db/models');
     const offset = (page - 1) * limit;
     const now = new Date();
 
@@ -244,8 +245,12 @@ const userService = {
         include: [
           {
             model: Trip,
+            as: 'trip',  // Add this line to specify the alias
             include: [
-              { model: Car },
+              { 
+                model: Car,
+                as: 'Car'  // Add this if Car is also using an alias in the model definition
+              },
               { 
                 model: StartLocation,
                 as: 'startLocation'
@@ -255,6 +260,14 @@ const userService = {
                 as: 'endLocation'
               }
             ]
+          },
+          {
+            model: PickupPoint,
+            as: 'pickupPoint'
+          },
+          {
+            model: DropPoint,
+            as: 'dropPoint'
           }
         ],
         order: [
@@ -266,7 +279,7 @@ const userService = {
 
       // Format the response according to the required structure
       const formatRide = (booking) => {
-        const trip = booking.Trip; // Note the capital T since we're not using an alias
+        const trip = booking.trip; // Use lowercase 'trip' to match the alias
         const startTime = new Date(trip.startTime);
         
         // Map booking status to the required format
@@ -289,8 +302,12 @@ const userService = {
           cabType: `${trip.Car.carType} (${trip.Car.carName})`,
           date: startTime.toLocaleDateString('en-US', dateOptions),
           time: startTime.toLocaleTimeString('en-US', timeOptions),
-          pickup: trip.startLocation?.name || 'Pickup Location',
-          dropoff: trip.endLocation?.name || 'Dropoff Location',
+          startLocation: trip.startLocation?.name || 'Start Location',
+          endLocation: trip.endLocation?.name || 'End Location',
+          duration: calculateDuration(startTime, trip.endTime),
+          pickup: booking.pickupPoint?.name || trip.startLocation?.name || 'Pickup Location',
+          dropoff: booking.dropPoint?.name || trip.endLocation?.name || 'Dropoff Location',
+
           fare: parseFloat(booking.totalAmount)
         };
       };

@@ -9,7 +9,10 @@ router.post('/initiate', bookingController.initiateBooking);
 // Create a new booking (legacy)
 router.post('/create', bookingController.createBooking);
 
-// Get bookings for a user
+// Get all bookings or filter by user ID
+router.get('/list', bookingController.getBookingList);
+
+// Get bookings for a specific user
 router.get('/:userId', bookingController.getUserBookings);
 
 // Get booking details
@@ -17,7 +20,5 @@ router.get('/details/:bookingId', bookingController.getBookingDetails);
 
 // Cancel a booking
 router.put('/:id/cancel', bookingController.cancelBooking);
-
-router.get('/list', bookingController.getBookingList);
 
 module.exports = router;

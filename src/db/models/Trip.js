@@ -116,23 +116,38 @@ const Trip = sequelize.define('Trip', {
 
 // Define associations
 Trip.associate = (models) => {
-  Trip.belongsTo(models.Car, { foreignKey: 'car_id' });
-  Trip.belongsTo(models.StartLocation, { foreignKey: 'start_location_id', as: 'startLocation' });
-  Trip.belongsTo(models.EndLocation, { foreignKey: 'end_location_id', as: 'endLocation' });
-  Trip.belongsToMany(PickupPoint, {
-    through: 'TripPickupPoints',
-    as: 'pickupPointsData',
-    foreignKey: 'trip_id'
+  Trip.belongsTo(models.Car, { 
+    foreignKey: 'carId',
+    as: 'car'
   });
   
-  Trip.belongsToMany(DropPoint, {
-    through: 'TripDropPoints',
-    as: 'dropPointsData',
-    foreignKey: 'trip_id'
+  Trip.belongsTo(models.StartLocation, { 
+    foreignKey: 'startLocationId', 
+    as: 'startLocation' 
   });
   
-  Trip.hasMany(models.Seat, { foreignKey: 'trip_id', as: 'seats' });
-  Trip.hasMany(models.Booking, { foreignKey: 'trip_id' });
+  Trip.belongsTo(models.EndLocation, { 
+    foreignKey: 'endLocationId', 
+    as: 'endLocation' 
+  });
+  
+  // These many-to-many associations are now defined in index.js
+  // to avoid circular dependencies and ensure proper loading order
+  
+  Trip.hasMany(models.Seat, { 
+    foreignKey: 'tripId', 
+    as: 'seats' 
+  });
+  
+  Trip.hasMany(models.Booking, { 
+    foreignKey: 'tripId',
+    as: 'bookings'
+  });
+  
+  Trip.hasMany(models.SeatPricing, {
+    foreignKey: 'tripId',
+    as: 'seatPricings'
+  });
 };
 
 module.exports = Trip;

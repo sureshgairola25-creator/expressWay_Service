@@ -1,93 +1,263 @@
-const { Booking, BookedSeat, Trip, Seat, User, Car, StartLocation, EndLocation, sequelize, PickupPoint, DropPoint } = require('../db/models');
+const db = require('../db/models');
+const { Booking, BookedSeat, Trip, Seat, User, Car, StartLocation, EndLocation, PickupPoint, DropPoint } = db;
+
+// Ensure models are properly associated
+const { sequelize } = require('../db/database');
 const { Op } = require('sequelize');
 const { NotFound, BadRequest } = require('http-errors');
 const paymentService = require('./paymentService');
 const bookingService = {
-  initiateBooking: async (bookingData) => {
-    const { userId, tripId, selectedSeats, totalAmount, customerEmail, customerPhone } = bookingData;
+  //   const { userId, tripId, pickupPointId, dropPointId, selectedSeats, totalAmount, customerEmail, customerPhone } = bookingData;
 
+  //   // Validate user exists
+  //   const user = await User.findByPk(userId);
+  //   if (!user) {
+  //     throw new BadRequest('User not found');
+  //   }
+
+  //   // Validate trip exists and is active
+  //   const trip = await Trip.findByPk(tripId);
+  //   if (!trip) {
+  //     throw new BadRequest('Trip not found');
+  //   }
+  //   if (trip.status !== true) {
+  //     throw new BadRequest('Trip is not active');
+  //   }
+
+  //   // Validate selected seats exist and are available
+  //   const seatRecords = await Seat.findAll({
+  //     where: { 
+  //       tripId: tripId, 
+  //       seatNumber: selectedSeats,
+  //       isBooked: 0 // Only consider available seats
+  //     }
+  //   });
+
+  //   // Check if all selected seats exist and are available
+  //   if (seatRecords.length !== selectedSeats.length) {
+  //     const foundSeatNumbers = seatRecords.map(s => s.seatNumber);
+  //     const missingSeats = selectedSeats.filter(seat => !foundSeatNumbers.includes(seat));
+  //     throw new BadRequest(`Some selected seats are not available: ${missingSeats.join(', ')}`);
+  //   }
+
+  //   // Check if any seats are already booked (shouldn't happen with the query above, but good to double-check)
+  //   const bookedSeats = seatRecords.filter(seat => seat.isBooked === 1);
+  //   if (bookedSeats.length > 0) {
+  //     throw new BadRequest(`Seats ${bookedSeats.map(s => s.seatNumber).join(', ')} are already booked`);
+  //   }
+
+  //   // Calculate total amount (should match provided totalAmount)
+  //   const calculatedTotal = seatRecords.reduce((sum, seat) => sum + parseFloat(seat.price), 0);
+  //   if (Math.abs(calculatedTotal - totalAmount) > 0.01) {
+  //     throw new BadRequest('Total amount does not match seat prices');
+  //   }
+
+  //   // Use transaction for atomicity
+  //   const t = await sequelize.transaction();
+  //   let booking;
+
+  //   try {
+  //     // Create booking with initiated status
+  //     booking = await Booking.create({
+  //       userId,
+  //       tripId,
+  //       pickupPointId,
+  //       dropPointId,
+  //       seats: selectedSeats,
+  //       totalAmount,
+  //       paymentStatus: 'pending',
+  //       bookingStatus: 'initiated',
+  //     }, { transaction: t });
+
+  //     // Create BookedSeat records (temporarily locked)
+  //     const bookedSeatsData = seatRecords.map(seat => ({
+  //       bookingId: booking.id,
+  //       tripId,
+  //       seatNumber: seat.seatNumber,
+  //       seatPrice: seat.price,
+  //       isCancelled: false,
+  //     }));
+
+  //     await BookedSeat.bulkCreate(bookedSeatsData, { transaction: t });
+
+  //     // Mark seats as booked in Seats table
+  //     await Seat.update(
+  //       { isBooked: 1 },
+  //       { 
+  //         where: { 
+  //           tripId: tripId, 
+  //           seatNumber: selectedSeats 
+  //         }, 
+  //         transaction: t 
+  //       }
+  //     );
+
+  //     // Generate payment order
+  //     const paymentResult = await paymentService.createOrder({
+  //       orderAmount: totalAmount,
+  //       customerEmail,
+  //       customerPhone,
+  //       customer_id: userId,
+  //       bookingId: booking.id,
+  //     });
+
+  //     // Update booking with payment details
+  //     await booking.update({
+  //       paymentOrderId: paymentResult.order_id,
+  //       paymentSessionId: paymentResult.payment_session_id,
+  //       paymentExpiry: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes expiry
+  //     }, { transaction: t });
+
+  //     await t.commit();
+
+  //     return {
+  //       ...booking.get({ plain: true }),
+  //       paymentSessionId: paymentResult.payment_session_id
+  //     };
+  //   } catch (error) {
+  //     await t.rollback();
+  //     throw error;
+  //   }
+  // },
+  initiateBooking: async (bookingData) => {
+    const {
+      userId,
+      tripId,
+      pickupPointId,
+      dropPointId,
+      selectedSeats,
+      totalAmount,
+      customerEmail,
+      customerPhone,
+      selectedMeal,
+      addons, // optional array of extras [{type, price}, ...]
+    } = bookingData;
+  
     // Validate user exists
     const user = await User.findByPk(userId);
-    if (!user) {
-      throw new BadRequest('User not found');
-    }
-
+    if (!user) throw new BadRequest("User not found");
+  
     // Validate trip exists and is active
     const trip = await Trip.findByPk(tripId);
-    if (!trip) {
-      throw new BadRequest('Trip not found');
-    }
-    if (trip.status !== true) {
-      throw new BadRequest('Trip is not active');
-    }
-
+    if (!trip) throw new BadRequest("Trip not found");
+    if (trip.status !== true) throw new BadRequest("Trip is not active");
+  
     // Validate selected seats exist and are available
     const seatRecords = await Seat.findAll({
-      where: { 
-        tripId: tripId, 
+      where: {
+        tripId,
         seatNumber: selectedSeats,
-        isBooked: 0 // Only consider available seats
-      }
+        isBooked: 0, // Only available seats
+      },
     });
-
-    // Check if all selected seats exist and are available
+  
+    // Check if all selected seats are valid
     if (seatRecords.length !== selectedSeats.length) {
-      const foundSeatNumbers = seatRecords.map(s => s.seatNumber);
-      const missingSeats = selectedSeats.filter(seat => !foundSeatNumbers.includes(seat));
-      throw new BadRequest(`Some selected seats are not available: ${missingSeats.join(', ')}`);
+      const foundSeats = seatRecords.map((s) => s.seatNumber);
+      const missingSeats = selectedSeats.filter(
+        (s) => !foundSeats.includes(s)
+      );
+      throw new BadRequest(
+        `Some selected seats are not available: ${missingSeats.join(", ")}`
+      );
     }
-
-    // Check if any seats are already booked (shouldn't happen with the query above, but good to double-check)
-    const bookedSeats = seatRecords.filter(seat => seat.isBooked === 1);
-    if (bookedSeats.length > 0) {
-      throw new BadRequest(`Seats ${bookedSeats.map(s => s.seatNumber).join(', ')} are already booked`);
+  
+    // Double-check no seat is already booked (safety)
+    const alreadyBooked = seatRecords.filter((s) => s.isBooked === 1);
+    if (alreadyBooked.length > 0) {
+      throw new BadRequest(
+        `Seats ${alreadyBooked.map((s) => s.seatNumber).join(", ")} are already booked`
+      );
     }
-
-    // Calculate total amount (should match provided totalAmount)
-    const calculatedTotal = seatRecords.reduce((sum, seat) => sum + parseFloat(seat.price), 0);
+  
+    // --- 💰 PRICE CALCULATION (Modular & Scalable) ---
+    const seatTotal = seatRecords.reduce(
+      (sum, seat) => sum + parseFloat(seat.price || 0),
+      0
+    );
+  
+    let extrasTotal = 0;
+    const breakdown = {
+      seatTotal,
+      extras: [],
+    };
+  
+    // Include meal (if exists)
+    if (selectedMeal?.price) {
+      const mealPrice = parseFloat(selectedMeal.price);
+      extrasTotal += mealPrice;
+      breakdown.extras.push({
+        type: selectedMeal.type || "Meal",
+        price: mealPrice,
+      });
+    }
+  
+    // Include addons (if any)
+    if (Array.isArray(addons) && addons.length > 0) {
+      addons.forEach((addon) => {
+        const addonPrice = parseFloat(addon.price || 0);
+        extrasTotal += addonPrice;
+        breakdown.extras.push({
+          type: addon.type || "Addon",
+          price: addonPrice,
+        });
+      });
+    }
+  
+    const calculatedTotal = seatTotal + extrasTotal;
+  
+    // Validate total amount
     if (Math.abs(calculatedTotal - totalAmount) > 0.01) {
-      throw new BadRequest('Total amount does not match seat prices');
+      throw new BadRequest(
+        `Total amount mismatch. Expected ${calculatedTotal}, received ${totalAmount}`
+      );
     }
-
-    // Use transaction for atomicity
+  
+    // --- TRANSACTION FOR ATOMICITY ---
     const t = await sequelize.transaction();
     let booking;
-
+  
     try {
       // Create booking with initiated status
-      booking = await Booking.create({
-        userId,
-        tripId,
-        seats: selectedSeats,
-        totalAmount,
-        paymentStatus: 'pending',
-        bookingStatus: 'initiated',
-      }, { transaction: t });
-
-      // Create BookedSeat records (temporarily locked)
-      const bookedSeatsData = seatRecords.map(seat => ({
+      booking = await Booking.create(
+        {
+          userId,
+          tripId,
+          pickupPointId,
+          dropPointId,
+          seats: selectedSeats,
+          totalAmount,
+          paymentStatus: "pending",
+          bookingStatus: "initiated",
+          priceBreakdown: breakdown, // 💾 Store detailed breakdown
+        },
+        { transaction: t }
+      );
+  
+      // Create BookedSeat records
+      const bookedSeatsData = seatRecords.map((seat) => ({
         bookingId: booking.id,
         tripId,
         seatNumber: seat.seatNumber,
         seatPrice: seat.price,
         isCancelled: false,
       }));
-
+  
       await BookedSeat.bulkCreate(bookedSeatsData, { transaction: t });
-
-      // Mark seats as booked in Seats table
+  
+      // Mark seats as booked
       await Seat.update(
         { isBooked: 1 },
-        { 
-          where: { 
-            tripId: tripId, 
-            seatNumber: selectedSeats 
-          }, 
-          transaction: t 
+        {
+          where: {
+            tripId,
+            seatNumber: selectedSeats,
+          },
+          transaction: t,
         }
       );
-
-      // Generate payment order
+  
+      // Create payment order
       const paymentResult = await paymentService.createOrder({
         orderAmount: totalAmount,
         customerEmail,
@@ -95,189 +265,350 @@ const bookingService = {
         customer_id: userId,
         bookingId: booking.id,
       });
-
+  
       // Update booking with payment details
-      await booking.update({
-        paymentOrderId: paymentResult.order_id,
-        paymentSessionId: paymentResult.payment_session_id,
-        paymentExpiry: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes expiry
-      }, { transaction: t });
-
+      await booking.update(
+        {
+          paymentOrderId: paymentResult.order_id,
+          paymentSessionId: paymentResult.payment_session_id,
+          paymentExpiry: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes expiry
+        },
+        { transaction: t }
+      );
+  
       await t.commit();
-
+  
       return {
         ...booking.get({ plain: true }),
-        paymentSessionId: paymentResult.payment_session_id
+        paymentSessionId: paymentResult.payment_session_id,
       };
     } catch (error) {
       await t.rollback();
       throw error;
     }
   },
-
+  
   getUserBookings: async (userId) => {
-    const bookings = await Booking.findAll({
-      where: { userId },
-      include: [
-        {
-          model: Trip,
-          include: [
-            {
-              model: Car,
-              attributes: ['carName', 'carType'],
-            },
-            {
-              model: StartLocation,
-              as: 'startLocation',
-              attributes: ['name'],
-            },
-            {
-              model: EndLocation,
-              as: 'endLocation',
-              attributes: ['name'],
-            },
-            {
-              model: PickupPoint,
-              as: 'pickupPoint',
-              attributes: ['name'],
-            },
-            {
-              model: DropPoint,
-              as: 'dropPoint',
-              attributes: ['name'],
-            },
-          ],
-        },
-      ],
-      attributes: ['id', 'seats', 'totalAmount', 'paymentStatus', 'bookingStatus', 'createdAt'],
-    });
-
-    return bookings;
-  },
-
-  getBookingList: async () => {
-    const bookings = await Booking.findAll({
-      include: [
-        {
-          model: User,
-          attributes: ['firstName', 'lastName'],
-        },
-        {
-          model: Trip,
-          include: [
-            {
-              model: Car,
-              attributes: ['carName', 'carType'],
-            },
-            {
-              model: StartLocation,
-              as: 'startLocation',
-              attributes: ['name'],
-            },
-            {
-              model: EndLocation,
-              as: 'endLocation',
-              attributes: ['name'],
-            },
-            {
-              model: PickupPoint,
-              as: 'pickupPointsData',
-              attributes: ['id', 'name'],
-              through: { attributes: [] } // Exclude the join table attributes
-            },
-            {
-              model: DropPoint,
-              as: 'dropPointsData',
-              attributes: ['id', 'name'],
-              through: { attributes: [] } // Exclude the join table attributes
-            }
-            // Remove PickupPoint and DropPoint from here as they're not directly associated with Trip
-          ],
-        },
-      ],
-      attributes: ['id', 'seats', 'totalAmount', 'bookingStatus', 'createdAt', 'pickupPointId', 'dropPointId'],
-    });
-
-    // Get unique pickup and drop point IDs
-    const pickupPointIds = [...new Set(bookings.map(b => b.pickupPointId).filter(Boolean))];
-    const dropPointIds = [...new Set(bookings.map(b => b.dropPointId).filter(Boolean))];
-
-    // Fetch pickup and drop points
-    const [pickupPoints, dropPoints] = await Promise.all([
-      PickupPoint.findAll({
-        where: { id: { [Op.in]: pickupPointIds } },
-        attributes: ['id', 'name']
-      }),
-      DropPoint.findAll({
-        where: { id: { [Op.in]: dropPointIds } },
-        attributes: ['id', 'name']
-      })
-    ]);
-
-    // Create lookup maps
-    const pickupPointMap = new Map(pickupPoints.map(pp => [pp.id, pp]));
-    const dropPointMap = new Map(dropPoints.map(dp => [dp.id, dp]));
-
-    // Format the bookings data
-    const formattedBookings = bookings.map(booking => {
-      const pickupPoint = booking.pickupPointId ? pickupPointMap.get(booking.pickupPointId) : null;
-      const dropPoint = booking.dropPointId ? dropPointMap.get(booking.dropPointId) : null;
+    try {
+      // Validate userId
+      if (!userId || isNaN(parseInt(userId))) {
+        throw new Error('Invalid user ID');
+      }
       
-      return {
-        BookingID: booking.id,
-        User: booking.User ? `${booking.User.firstName} ${booking.User.lastName}`.trim() : 'Unknown',
-        Trip: booking.Trip ? 
-          `${booking.Trip.startLocation?.name || 'Unknown'} → ${booking.Trip.endLocation?.name || 'Unknown'}` : 
-          'Unknown Route',
-        Pickup: pickupPoint?.name || 'Not specified',
-        Drop: dropPoint?.name || 'Not specified',
-        Seats: booking.seats,
-        Status: booking.bookingStatus,
-        Amount: `₹${booking.totalAmount}`,
-        Car: booking.Trip?.Car ? `${booking.Trip.Car.carType} (${booking.Trip.Car.carName})` : 'N/A',
-        Date: booking.createdAt
-      };
-    });
+      // Import models directly to avoid circular dependencies
+      const Booking = require('../db/models/Booking');
+      const Trip = require('../db/models/Trip');
+      const Car = require('../db/models/Car');
+      const StartLocation = require('../db/models/StartLocation');
+      const EndLocation = require('../db/models/EndLocation');
+      
+      const bookings = await Booking.findAll({
+        where: { userId: parseInt(userId) },
+        include: [
+          {
+            model: Trip,
+            as: 'trip',
+            include: [
+              {
+                model: Car,
+                as: 'Car',
+                attributes: ['id', 'carName', 'carType', 'registrationNumber']
+              },
+              {
+                model: StartLocation,
+                as: 'startLocation',
+                attributes: ['id', 'name']
+              },
+              {
+                model: EndLocation,
+                as: 'endLocation',
+                attributes: ['id', 'name']
+              }
+            ]
+          }
+        ],
+        attributes: ['id', 'seats', 'totalAmount', 'paymentStatus', 'bookingStatus'],
+      });
 
-    return formattedBookings;
+      return bookings || [];
+    } catch (error) {
+      console.error('Error in getUserBookings:', error);
+      throw error;
+    }
   },
 
   getBookingDetails: async (bookingId) => {
-    const booking = await Booking.findByPk(bookingId, {
+    const booking = await Booking.findOne({
+      where: { id: bookingId },
       include: [
         {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phone']
+        },
+        {
           model: Trip,
+          as: 'trip',
           include: [
             {
               model: Car,
-              attributes: ['carName', 'carType'],
+              as: 'car',
+              attributes: ['id', 'name', 'type', 'registrationNumber', 'totalSeats']
             },
             {
               model: StartLocation,
               as: 'startLocation',
-              attributes: ['name'],
+              attributes: ['id', 'name']
             },
             {
               model: EndLocation,
               as: 'endLocation',
-              attributes: ['name'],
-            },
-          ],
+              attributes: ['id', 'name']
+            }
+          ]
         },
         {
-          model: BookedSeat,
-          attributes: ['seatNumber', 'seatPrice', 'isCancelled'],
+          model: PickupPoint,
+          as: 'pickupPoint',
+          attributes: ['id', 'name']
         },
+        {
+          model: DropPoint,
+          as: 'dropPoint',
+          attributes: ['id', 'name']
+        }
       ],
-      attributes: ['id', 'seats', 'totalAmount', 'paymentStatus', 'bookingStatus', 'createdAt'],
+      attributes: [
+        'id', 
+        'seats', 
+        'totalAmount', 
+        'bookingStatus', 
+        'paymentStatus',
+        'createdAt', 
+        'pickupPointId', 
+        'dropPointId',
+        'tripId',
+        'userId',
+        'selectedMeal',
+        'priceBreakdown'
+      ]
     });
 
     if (!booking) {
       throw new NotFound('Booking not found');
     }
 
-    return booking;
+    // Format the response
+    return {
+      id: booking.id,
+      user: booking.User ? {
+        id: booking.User.id,
+        name: `${booking.User.firstName || ''} ${booking.User.lastName || ''}`.trim() || 'Unknown',
+        email: booking.User.email,
+        phone: booking.User.phone
+      } : { id: null, name: 'Unknown' },
+      trip: booking.trip ? {
+        id: booking.trip.id,
+        route: booking.trip.startLocation && booking.trip.endLocation 
+          ? `${booking.trip.startLocation.name} → ${booking.trip.endLocation.name}`
+          : 'Unknown Route',
+        startLocation: booking.trip.startLocation,
+        endLocation: booking.trip.endLocation,
+        startTime: booking.trip.startTime,
+        endTime: booking.trip.endTime,
+        duration: booking.trip.duration,
+        car: booking.trip.car ? {
+          id: booking.trip.car.id,
+          name: booking.trip.car.name,
+          type: booking.trip.car.type,
+          registrationNumber: booking.trip.car.registrationNumber,
+          totalSeats: booking.trip.car.totalSeats
+        } : null
+      } : null,
+      pickupPoint: booking.pickupPoint || null,
+      dropPoint: booking.dropPoint || null,
+      seats: booking.seats,
+    };
   },
+
+  getBookingList: async (userId = null) => {
+    try {
+      // Import models directly from the models directory to avoid circular dependencies
+      const Booking = require('../db/models/Booking');
+      const User = require('../db/models/User');
+      const Trip = require('../db/models/Trip');
+      const Car = require('../db/models/Car');
+      const StartLocation = require('../db/models/StartLocation');
+      const EndLocation = require('../db/models/EndLocation');
+      const PickupPoint = require('../db/models/PickupPoint');
+      const DropPoint = require('../db/models/DropPoint');
+      
+      // If userId is provided, ensure it's a valid number
+      if (userId !== null && (isNaN(parseInt(userId)) || parseInt(userId) <= 0)) {
+        throw new Error('Invalid user ID');
+      }
+      
+      // Ensure models are properly associated
+      const db = require('../db/models');
+      
+      // Define the query options with explicit includes and aliases
+      const options = {
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNo']
+          },
+          {
+            model: Trip,
+            as: 'trip',
+            include: [
+              {
+                model: Car,
+                as: 'Car',
+                attributes: ['id', 'carName', 'carType', 'registrationNumber']
+              },
+              {
+                model: StartLocation,
+                as: 'startLocation',
+                attributes: ['id', 'name']
+              },
+              {
+                model: EndLocation,
+                as: 'endLocation',
+                attributes: ['id', 'name']
+              }
+            ]
+          },
+          {
+            model: PickupPoint,
+            as: 'pickupPoint',
+            attributes: ['id', 'name']
+          },
+          {
+            model: DropPoint,
+            as: 'dropPoint',
+            attributes: ['id', 'name']
+          }
+        ],
+        order: [['created_at', 'DESC']]
+      };
+      
+      if (userId) {
+        options.where = { userId };
+      }
+      
+      // Execute the query
+      const bookings = await Booking.findAll(options);
+      
+      if (!bookings || bookings.length === 0) return [];
+      
+      // Format the response
+      return bookings.map(booking => ({
+        id: booking.id,
+        user: booking.user ? {
+          id: booking.user.id,
+          firstName: booking.user.firstName,
+          lastName: booking.user.lastName,
+          email: booking.user.email,
+          phone: booking.user.phone
+        } : null,
+        trip: booking.trip ? {
+          id: booking.trip.id,
+          car: booking.trip.car ? {
+            id: booking.trip.car.id,
+            name: booking.trip.car.name,
+            type: booking.trip.car.type,
+            registrationNumber: booking.trip.car.registrationNumber
+          } : null,
+          startLocation: booking.trip.startLocation ? {
+            id: booking.trip.startLocation.id,
+            name: booking.trip.startLocation.name
+          } : null,
+          endLocation: booking.trip.endLocation ? {
+            id: booking.trip.endLocation.id,
+            name: booking.trip.endLocation.name
+          } : null
+        } : null,
+        pickupPoint: booking.pickupPoint ? {
+          id: booking.pickupPoint.id,
+          name: booking.pickupPoint.name
+        } : null,
+        dropPoint: booking.dropPoint ? {
+          id: booking.dropPoint.id,
+          name: booking.dropPoint.name
+        } : null,
+        seats: booking.seats,
+        totalAmount: booking.totalAmount,
+        bookingStatus: booking.bookingStatus,
+        paymentStatus: booking.paymentStatus,
+        selectedMeal: booking.selectedMeal,
+        priceBreakdown: booking.priceBreakdown,
+        createdAt: booking.createdAt
+      }));
+    } catch (error) {
+      console.error('Error in getBookingList:', error);
+      throw error;
+    }
+    
+    try {
+      const [bookings] = await sequelize.query(query, {
+        replacements,
+        type: sequelize.QueryTypes.SELECT,
+        nest: true
+      });
+      
+      if (!bookings || bookings.length === 0) return [];
+      
+      // Format the results to match the expected structure
+      return bookings.map(booking => ({
+        id: booking.id,
+        user: {
+          id: booking['user.id'],
+          firstName: booking['user.firstName'],
+          lastName: booking['user.lastName'],
+          email: booking['user.email'],
+          phone: booking['user.phone']
+        },
+        trip: booking['trip.id'] ? {
+          id: booking['trip.id'],
+          car: booking['trip.car.id'] ? {
+            id: booking['trip.car.id'],
+            name: booking['trip.car.name'],
+            type: booking['trip.car.type'],
+            registrationNumber: booking['trip.car.registrationNumber']
+          } : null,
+          startLocation: booking['trip.startLocation.id'] ? {
+            id: booking['trip.startLocation.id'],
+            name: booking['trip.startLocation.name']
+          } : null,
+          endLocation: booking['trip.endLocation.id'] ? {
+            id: booking['trip.endLocation.id'],
+            name: booking['trip.endLocation.name']
+          } : null
+        } : null,
+        pickupPoint: booking['pickupPoint.id'] ? {
+          id: booking['pickupPoint.id'],
+          name: booking['pickupPoint.name']
+        } : null,
+        dropPoint: booking['dropPoint.id'] ? {
+          id: booking['dropPoint.id'],
+          name: booking['dropPoint.name']
+        } : null,
+        seats: booking.seats,
+        totalAmount: booking.totalAmount,
+        bookingStatus: booking.bookingStatus,
+        paymentStatus: booking.paymentStatus,
+        selectedMeal: booking.selectedMeal,
+        priceBreakdown: booking.priceBreakdown,
+        createdAt: booking.createdAt
+      }));
+    } catch (error) {
+      console.error('Error fetching booking list:', error);
+      throw error;
+    }
+  },
+
 
   cancelBooking: async (bookingId) => {
     const booking = await Booking.findByPk(bookingId);
@@ -297,8 +628,8 @@ const bookingService = {
       await booking.update({ bookingStatus: 'cancelled' }, { transaction: t });
 
       // Mark seats as available
-      await SeatPricing.update(
-        { isBooked: false },
+      await Seat.update(
+        { isAvailable: true },
         { where: { tripId: booking.tripId, seatNumber: booking.seats }, transaction: t }
       );
 
