@@ -47,7 +47,7 @@ const paymentService = {
         ...(customerEmail && { customer_email: customerEmail }),
       },
       order_meta: {
-        return_url: `http://localhost:5173/bookings/${bookingId}`,
+        return_url: `${process.env.CLIENT_URL}/bookings`,
       },
     };
 
