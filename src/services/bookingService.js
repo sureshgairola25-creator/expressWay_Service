@@ -230,6 +230,7 @@ const bookingService = {
           paymentStatus: "pending",
           bookingStatus: "initiated",
           priceBreakdown: breakdown, // 💾 Store detailed breakdown
+          selectedMeal: selectedMeal
         },
         { transaction: t }
       );

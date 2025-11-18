@@ -48,7 +48,7 @@ module.exports = (sequelize, DataTypes) => {
         discount = Math.min(this.discount_value, amount);
       }
 
-      return parseFloat(discount.toFixed(2));
+      return parseFloat(Number(discount).toFixed(2));
     }
   }
 

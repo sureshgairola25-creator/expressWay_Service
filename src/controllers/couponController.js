@@ -345,6 +345,7 @@ exports.getCoupons = async (req, res) => {
   }
 };
 
+
 // @desc    Get active coupons
 // @route   GET /admin/coupons/active
 // @access  Public
@@ -432,8 +433,6 @@ exports.validateCoupon = async (req, res) => {
       where: { 
         code: code.toUpperCase(),
         status: true,
-        startDate: { [Op.lte]: new Date() },
-        endDate: { [Op.gte]: new Date() }
       }
     });
     
@@ -445,7 +444,7 @@ exports.validateCoupon = async (req, res) => {
     }
     
     // Check total usage limit
-    if (coupon.totalUsageLimit !== null && coupon.totalUsed >= coupon.totalUsageLimit) {
+    if (coupon.total_usage_limit !== null && coupon.total_used >= coupon.total_usage_limit) {
       return res.status(400).json({
         success: false,
         message: 'This coupon has reached its maximum usage limit'
@@ -453,20 +452,22 @@ exports.validateCoupon = async (req, res) => {
     }
     
     // Check minimum order amount
-    if (coupon.minOrderAmount && amount < coupon.minOrderAmount) {
+    // console.log(coupon.min_order_amount, amount,typeof amount,typeof coupon.min_order_amount,"----------------");
+    
+    if (coupon.min_order_amount && Number(amount) < Number(coupon.min_order_amount)) {
       return res.status(400).json({
         success: false,
-        message: `Minimum order amount of ${coupon.minOrderAmount} is required for this coupon`
+        message: `Minimum order amount above of ${coupon.min_order_amount} is required for this coupon`
       });
     }
     
     // Check per user usage limit if user is provided
-    if (userId && coupon.usageLimitPerUser) {
+    if (userId && coupon.usage_limit_per_user) {
       // You would typically check the user's usage against the booking table
       // This is a simplified example
       const userUsage = 0; // Replace with actual usage check
       
-      if (userUsage >= coupon.usageLimitPerUser) {
+      if (userUsage >= coupon.usage_limit_per_user) {
         return res.status(400).json({
           success: false,
           message: 'You have reached the maximum usage limit for this coupon'
@@ -483,10 +484,10 @@ exports.validateCoupon = async (req, res) => {
         coupon: {
           id: coupon.id,
           code: coupon.code,
-          discountType: coupon.discountType,
-          discountValue: coupon.discountValue,
-          maxDiscountAmount: coupon.maxDiscountAmount,
-          minOrderAmount: coupon.minOrderAmount
+          discountType: coupon.discount_type,
+          discountValue: coupon.discount_value,
+          maxDiscountAmount: coupon.max_discount_amount,
+          minOrderAmount: coupon.min_order_amount
         },
         discount,
         finalAmount: parseFloat(amount) - discount

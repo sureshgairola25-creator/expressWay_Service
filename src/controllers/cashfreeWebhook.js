@@ -1,43 +1,65 @@
-
 const db = require('../db/models');
 const { Booking } = db;
 
 const CashfreeWebhook = async (req, res) => {
   try {
-    console.log("🔥 RAW BODY:", req.body.toString());
-
+    // 1. Parsing the Raw Body
     const event = JSON.parse(req.body.toString());
+    const paymentOrderId = event.data.order.order_id;
+    
+    // Extract the booking ID from the order ID format: ORDER_<bookingId>_<timestamp>
+    const orderIdParts = paymentOrderId.split('_');
+    const bookingId = orderIdParts.length >= 2 ? orderIdParts[1] : paymentOrderId;
+    
+    console.log("EVENT TYPE:", event.type, "ORDER ID:", paymentOrderId, "BOOKING ID:", bookingId);
 
-    console.log("EVENT:", event.type, event.data.order_id);
+    // Variable to hold the number of updated rows
+    let updatedRows = [0]; 
 
-    if (event.type === "PAYMENT_SUCCESS") {
-      await Booking.update(
+    // 2. Handling PAYMENT_SUCCESS_WEBHOOK
+    if (event.type === "PAYMENT_SUCCESS_WEBHOOK") {
+      // Using model field names (camelCase) - Sequelize will map to snake_case in the database
+      updatedRows = await Booking.update(
         {
           paymentStatus: "completed",
           bookingStatus: "confirmed"
         },
-        { where: { paymentOrderId: event.data.order_id } }
+        { 
+          where: { 
+            id: bookingId,
+            paymentOrderId: paymentOrderId 
+          } 
+        }
       );
     }
 
-    if (event.type === "PAYMENT_FAILED") {
-      await Booking.update(
+    // 3. Handling PAYMENT_FAILED_WEBHOOK
+    if (event.type === "PAYMENT_FAILED_WEBHOOK") {
+      // Using model field names (camelCase) - Sequelize will map to snake_case in the database
+      updatedRows = await Booking.update( 
         {
           paymentStatus: "failed",
           bookingStatus: "cancelled"
         },
-        { where: { paymentOrderId: event.data.order_id } }
+        { 
+          where: { 
+            id: bookingId,
+            paymentOrderId: paymentOrderId 
+          } 
+        }
       );
     }
 
+    // 4. Logging the Result (Crucial for Debugging)
+    // updatedRows[0] will be 1 if updated, 0 if no match found.
+    console.log(`✅ Update Result for ${paymentOrderId}: ${updatedRows[0]} row(s) updated.`);
+    
     return res.status(200).send("OK");
+    
   } catch (err) {
-    console.log("Webhook Error:", err);
-    return res.status(200).send("OK"); // Cashfree must always get 200
+    console.log("⚠️ Webhook Error:", err);
+    return res.status(200).send("OK"); 
   }
 };
 
-  
-
 module.exports = CashfreeWebhook;
-  
