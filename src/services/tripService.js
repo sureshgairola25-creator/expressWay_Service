@@ -107,7 +107,7 @@ const tripService = {
         duration,
         meals: meals.length > 0 ? meals : null
       };
-
+      
       // Create the trip with meals data
       const trip = await tripService.createTrip(tripToCreate, { transaction });
 
@@ -160,7 +160,8 @@ const tripService = {
           required: true,
         }
       ],
-      attributes: ['id', 'pickupPoints', 'dropPoints', 'startTime', 'endTime', 'duration', 'status']
+      attributes: ['id', 'pickupPoints', 'dropPoints', 'startTime', 'endTime', 'duration', 'status','created_at','updated_at'],
+      order: [['created_at', 'DESC']]
     });
 
     // Get all seat data for these trips
@@ -265,7 +266,9 @@ const tripService = {
         availableSeats,
         bookedSeats,
         minSeatPrice,
-        seatsInfo: seats
+        seatsInfo: seats,
+        created_at: trip.created_at,
+        updated_at: trip.updated_at
       };
     }));
 

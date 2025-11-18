@@ -281,7 +281,7 @@ const userService = {
       const formatRide = (booking) => {
         const trip = booking.trip; // Use lowercase 'trip' to match the alias
         const startTime = new Date(trip.startTime);
-        
+        console.log("booking",booking.bookingStatus);
         // Map booking status to the required format
         let status = 'Confirmed';
         if (booking.bookingStatus === 'cancelled') {
@@ -289,7 +289,7 @@ const userService = {
         } else if (booking.bookingStatus === 'completed') {
           status = 'Completed';
         } else if (booking.bookingStatus === 'initiated' && booking.paymentStatus === 'pending') {
-          status = 'Confirmed';
+          status = 'Pending';
         }
 
         // Format date and time
@@ -299,7 +299,7 @@ const userService = {
         return {
           id: booking.id,
           status,
-          cabType: `${trip.Car.carType} (${trip.Car.carName})`,
+          cabType: `${trip.Car.carType} (${trip.Car.carName}-${trip.Car.carUniqueNumber})`,
           date: startTime.toLocaleDateString('en-US', dateOptions),
           time: startTime.toLocaleTimeString('en-US', timeOptions),
           startLocation: trip.startLocation?.name || 'Start Location',
@@ -307,7 +307,6 @@ const userService = {
           duration: calculateDuration(startTime, trip.endTime),
           pickup: booking.pickupPoint?.name || trip.startLocation?.name || 'Pickup Location',
           dropoff: booking.dropPoint?.name || trip.endLocation?.name || 'Dropoff Location',
-
           fare: parseFloat(booking.totalAmount)
         };
       };

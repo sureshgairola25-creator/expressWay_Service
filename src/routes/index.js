@@ -10,6 +10,7 @@ const seat = require('./seatRoutes');
 const otp = require('./otpRoutes');
 const payment = require('./paymentRoutes');
 const booking = require('./bookingRoutes');
+const coupon = require('./couponRoutes');
 
 module.exports = {
   root,
@@ -23,5 +24,6 @@ module.exports = {
   otp,
   payment,
   booking,
+  coupon,
   user
 };

@@ -1,4 +1,4 @@
-const { Coupon } = require('../db/models');
+const { Coupon, sequelize } = require('../db/models');
 const { handleUpload, deleteFile } = require('../utils/fileUpload');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
@@ -355,19 +355,19 @@ exports.getActiveCoupons = async (req, res) => {
     const coupons = await Coupon.findAll({
       where: {
         status: true,
-        startDate: { [Op.lte]: now },
-        endDate: { [Op.gte]: now },
+        start_date: { [Op.lte]: now },
+        end_date: { [Op.gte]: now },
         [Op.or]: [
-          { totalUsageLimit: null },
+          { total_usage_limit: null },
           { 
-            totalUsageLimit: { [Op.gt]: 0 },
+            total_usage_limit: { [Op.gt]: 0 },
             [Op.and]: [
-              sequelize.literal('"totalUsageLimit" > "totalUsed"')
+              sequelize.literal('"total_usage_limit" > "total_used"')
             ]
           }
         ]
       },
-      order: [['createdAt', 'DESC']]
+      order: [['created_at', 'DESC']]
     });
     
     res.json({
