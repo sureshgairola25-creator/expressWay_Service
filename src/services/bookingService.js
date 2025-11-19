@@ -126,11 +126,14 @@ const bookingService = {
       pickupPointId,
       dropPointId,
       selectedSeats,
-      totalAmount,
+      totalAmount, // This is now the subtotal (before discount)
       customerEmail,
       customerPhone,
       selectedMeal,
       addons, // optional array of extras [{type, price}, ...]
+      discountAmount = 0, // New: discount amount from coupon
+      couponCode = null,  // New: coupon code if applied
+      finalPayableAmount, // New: total after discount
     } = bookingData;
   
     // Validate user exists
@@ -180,6 +183,8 @@ const bookingService = {
     const breakdown = {
       seatTotal,
       extras: [],
+      subtotal: 0, // Will be set after calculating extras
+      coupon: null
     };
   
     // Include meal (if exists)
@@ -204,12 +209,30 @@ const bookingService = {
       });
     }
   
-    const calculatedTotal = seatTotal + extrasTotal;
+    const calculatedSubtotal = seatTotal + extrasTotal;
+    breakdown.subtotal = calculatedSubtotal;
+    
+    // Add coupon details to breakdown if coupon is applied
+    if (couponCode) {
+      breakdown.coupon = {
+        code: couponCode,
+        discount: parseFloat(discountAmount) || 0,
+        finalAmount: parseFloat(finalPayableAmount) || calculatedSubtotal
+      };
+    }
   
-    // Validate total amount
-    if (Math.abs(calculatedTotal - totalAmount) > 0.01) {
+    // Validate subtotal amount (before discount)
+    if (Math.abs(calculatedSubtotal - totalAmount) > 0.01) {
       throw new BadRequest(
-        `Total amount mismatch. Expected ${calculatedTotal}, received ${totalAmount}`
+        `Subtotal amount mismatch. Expected ${calculatedSubtotal}, received ${totalAmount}`
+      );
+    }
+    
+    // Validate final payable amount (after discount)
+    const expectedFinal = calculatedSubtotal - (parseFloat(discountAmount) || 0);
+    if (Math.abs(expectedFinal - parseFloat(finalPayableAmount)) > 0.01) {
+      throw new BadRequest(
+        `Final payable amount mismatch. Expected ${expectedFinal}, received ${finalPayableAmount}`
       );
     }
   
@@ -226,7 +249,10 @@ const bookingService = {
           pickupPointId,
           dropPointId,
           seats: selectedSeats,
-          totalAmount,
+          subtotalAmount: totalAmount, // Store subtotal (before discount)
+          discountAmount: parseFloat(discountAmount) || 0,
+          couponCode: couponCode,
+          totalAmount: parseFloat(finalPayableAmount), // Store final payable amount
           paymentStatus: "pending",
           bookingStatus: "initiated",
           priceBreakdown: breakdown, // 💾 Store detailed breakdown
@@ -253,29 +279,27 @@ const bookingService = {
           where: {
             tripId,
             seatNumber: selectedSeats,
-          },
-          transaction: t,
-        }
-      );
-  
-      // Create payment order
-      const paymentResult = await paymentService.createOrder({
-        orderAmount: totalAmount,
-        customerEmail,
-        customerPhone,
-        customer_id: userId,
-        bookingId: booking.id,
-      });
-  
-      // Update booking with payment details
-      await booking.update(
-        {
-          paymentOrderId: paymentResult.order_id,
-          paymentSessionId: paymentResult.payment_session_id,
-          paymentExpiry: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes expiry
+          }
         },
         { transaction: t }
       );
+
+      // Create payment order with the final payable amount (after discount)
+      const paymentResult = await paymentService.createOrder({
+        orderId: `ORDER_${booking.id}_${Date.now()}`,
+        orderAmount: parseFloat(finalPayableAmount), // Use final amount after discount
+        customerEmail,
+        customerPhone,
+        customerId: userId,
+        bookingId: booking.id,
+      });
+
+      // Update booking with payment details
+      await booking.update({
+        paymentOrderId: paymentResult.order_id,
+        paymentSessionId: paymentResult.payment_session_id,
+        paymentExpiry: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes expiry
+      }, { transaction: t });
   
       await t.commit();
   
