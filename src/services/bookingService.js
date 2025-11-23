@@ -134,7 +134,13 @@ const bookingService = {
       discountAmount = 0, // New: discount amount from coupon
       couponCode = null,  // New: coupon code if applied
       finalPayableAmount, // New: total after discount
+      journeyDate, // New: The date for which the booking is being made (YYYY-MM-DD)
     } = bookingData;
+    
+    // Validate journeyDate format
+    if (!journeyDate || !/^\d{4}-\d{2}-\d{2}$/.test(journeyDate)) {
+      throw new BadRequest('Valid journeyDate (YYYY-MM-DD) is required');
+    }
   
     // Validate user exists
     const user = await User.findByPk(userId);
@@ -144,13 +150,60 @@ const bookingService = {
     const trip = await Trip.findByPk(tripId);
     if (!trip) throw new BadRequest("Trip not found");
     if (trip.status !== true) throw new BadRequest("Trip is not active");
+    
+    // Validate journeyDate against trip schedule
+    const tripStartDate = new Date(trip.startTime).toISOString().split('T')[0];
+    
+    if (!trip.isRecurring) {
+      // For non-recurring trips, journeyDate must match the trip's start date
+      if (journeyDate !== tripStartDate) {
+        throw new BadRequest(`This is a one-time trip and is only available on ${tripStartDate}`);
+      }
+    } else {
+      // For recurring trips, journeyDate must be on or after the trip's start date
+      if (journeyDate < tripStartDate) {
+        throw new BadRequest(`Journey date cannot be before the trip start date (${tripStartDate})`);
+      }
+    }
   
-    // Validate selected seats exist and are available
+    // Check for seat availability for the specific journey date
+    const existingBookings = await Booking.findAll({
+      where: {
+        tripId,
+        journeyDate: new Date(journeyDate),
+      },
+      raw: true,
+    });
+    
+    // Get all seat numbers that are already booked for this trip on this date
+    const bookedSeatNumbers = new Set();
+    existingBookings.forEach(booking => {
+      try {
+        const seats = Array.isArray(booking.seats) ? booking.seats : JSON.parse(booking.seats || '[]');
+        seats.forEach(seat => {
+          if (typeof seat === 'object' && seat.seatNumber) {
+            bookedSeatNumbers.add(seat.seatNumber);
+          } else if (typeof seat === 'string' || typeof seat === 'number') {
+            bookedSeatNumbers.add(seat);
+          }
+        });
+      } catch (e) {
+        console.error('Error parsing seats for booking:', booking.id, e);
+      }
+    });
+    
+    // Check if any selected seats are already booked
+    const alreadyBookedSeats = selectedSeats.filter(seat => bookedSeatNumbers.has(seat));
+    if (alreadyBookedSeats.length > 0) {
+      throw new BadRequest(`Seat(s) ${alreadyBookedSeats.join(', ')} are already booked for the selected date`);
+    }
+    
+    // Get seat records for the selected seats
     const seatRecords = await Seat.findAll({
       where: {
         tripId,
         seatNumber: selectedSeats,
-        isBooked: 0, // Only available seats
+        // isBooked: 0, // Only available seats
       },
     });
   
@@ -166,12 +219,12 @@ const bookingService = {
     }
   
     // Double-check no seat is already booked (safety)
-    const alreadyBooked = seatRecords.filter((s) => s.isBooked === 1);
-    if (alreadyBooked.length > 0) {
-      throw new BadRequest(
-        `Seats ${alreadyBooked.map((s) => s.seatNumber).join(", ")} are already booked`
-      );
-    }
+    // const alreadyBooked = seatRecords.filter((s) => s.isBooked === 1);
+    // if (alreadyBooked.length > 0) {
+    //   throw new BadRequest(
+    //     `Seats ${alreadyBooked.map((s) => s.seatNumber).join(", ")} are already booked`
+    //   );
+    // }
   
     // --- 💰 PRICE CALCULATION (Modular & Scalable) ---
     const seatTotal = seatRecords.reduce(
@@ -249,6 +302,7 @@ const bookingService = {
           pickupPointId,
           dropPointId,
           seats: selectedSeats,
+          journeyDate: new Date(journeyDate),
           subtotalAmount: totalAmount, // Store subtotal (before discount)
           discountAmount: parseFloat(discountAmount) || 0,
           couponCode: couponCode,
@@ -273,16 +327,16 @@ const bookingService = {
       await BookedSeat.bulkCreate(bookedSeatsData, { transaction: t });
   
       // Mark seats as booked
-      await Seat.update(
-        { isBooked: 1 },
-        {
-          where: {
-            tripId,
-            seatNumber: selectedSeats,
-          }
-        },
-        { transaction: t }
-      );
+      // await Seat.update(
+      //   { isBooked: 1 },
+      //   {
+      //     where: {
+      //       tripId,
+      //       seatNumber: selectedSeats,
+      //     }
+      //   },
+      //   { transaction: t }
+      // );
 
       // Create payment order with the final payable amount (after discount)
       const paymentResult = await paymentService.createOrder({
@@ -653,10 +707,10 @@ const bookingService = {
       await booking.update({ bookingStatus: 'cancelled' }, { transaction: t });
 
       // Mark seats as available
-      await Seat.update(
-        { isAvailable: true },
-        { where: { tripId: booking.tripId, seatNumber: booking.seats }, transaction: t }
-      );
+      // await Seat.update(
+      //   { isAvailable: true },
+      //   { where: { tripId: booking.tripId, seatNumber: booking.seats }, transaction: t }
+      // );
 
       // Mark BookedSeat as cancelled
       await BookedSeat.update(

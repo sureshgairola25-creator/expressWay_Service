@@ -846,11 +846,30 @@ const tripService = {
       if (startLocation) where.start_location_id = parseInt(startLocation);
       if (endLocation) where.end_location_id = parseInt(endLocation);
   
+      let searchDate, nextDay;
       if (date) {
         const [year, month, day] = date.split("-").map(Number);
-        const startDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-        const endDate = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0));
-        where.start_time = { [Op.gte]: startDate, [Op.lt]: endDate };
+        searchDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+        nextDay = new Date(searchDate);
+        nextDay.setDate(nextDay.getDate() + 1);
+        
+        // For non-recurring trips, match the exact date
+        // For recurring trips, we'll filter them later based on the day of week
+        where[Op.or] = [
+          // Non-recurring trips on the exact date
+          {
+            is_recurring: false,
+            start_time: {
+              [Op.gte]: searchDate,
+              [Op.lt]: nextDay
+            }
+          },
+          // Recurring trips (we'll filter by day of week later)
+          {
+            is_recurring: true,
+            start_time: { [Op.lt]: nextDay } // Only include recurring trips that have started
+          }
+        ];
       } else {
         where.start_time = { [Op.gte]: new Date() };
       }
@@ -858,7 +877,7 @@ const tripService = {
       const includeSeats = {
         model: Seat,
         as: "seats",
-        attributes: ["id", "seat_number", "price", "status", "seat_type","isBooked"],
+        attributes: ["id", "seat_number", "price", "status", "seat_type", "isBooked"],
         required: false
       };
   
@@ -877,7 +896,8 @@ const tripService = {
           "updated_at",
           "car_id",
           "start_location_id",
-          "end_location_id"
+          "end_location_id",
+          "is_recurring"
         ],
         include: [
           {
@@ -911,22 +931,82 @@ const tripService = {
   
       // Filter by pickup & drop points and fetch names
       const filteredTrips = [];
+      
       for (const trip of trips) {
         const t = trip.get({ plain: true });
-        const leftSeats = (t.seats || []).filter(s => s.isBooked === false);
-        const availableSeats = (t.seats || [])
-        const seatPrices = availableSeats.map(s => parseFloat(s.price) || 0);
+        
+        // For non-recurring trips, check if the date matches exactly
+        const tripDate = new Date(t.start_time);
+        const tripDay = tripDate.getDay();
+        const tripDateStr = tripDate.toISOString().split('T')[0];
+        
+        if (t.is_recurring) {
+          const searchDateObj = new Date(date);
+          const isFutureOrSameDate = searchDateObj >= new Date(tripDateStr);
+      
+          // DAILY RECURRING → always show for future dates
+          if (t.repeat_type === "daily") {
+              if (!isFutureOrSameDate) continue;
+      
+              // adjust start time to selected date
+              const adjustedStart = new Date(
+                  searchDateObj.getFullYear(),
+                  searchDateObj.getMonth(),
+                  searchDateObj.getDate(),
+                  tripDate.getHours(),
+                  tripDate.getMinutes(),
+                  tripDate.getSeconds()
+              );
+      
+              t.start_time = adjustedStart;
+      
+              // adjust end time
+              if (t.duration) {
+                  const [hours, minutes] = t.duration.split(':').map(Number);
+                  const adjustedEnd = new Date(adjustedStart);
+                  adjustedEnd.setHours(adjustedStart.getHours() + hours,
+                                       adjustedStart.getMinutes() + minutes);
+                  t.end_time = adjustedEnd;
+              }
+          }
+      } else if (date && tripDateStr !== date) {
+          // For non-recurring trips, skip if the date doesn't match exactly
+          console.log(`Skipping non-recurring trip ${t.id} - date doesn't match (trip: ${tripDateStr}, search: ${date})`);
+          continue;
+        }
+        
+        // const leftSeats = (t.seats || []).filter(s => s.isBooked === false);
+        const bookingsForDate = await Booking.findAll({
+          where: {
+              tripId: t.id,
+              journeyDate: date,
+              bookingStatus: { [Op.not]: 'cancelled' }
+          },
+          attributes: ['seats']
+      });
+      
+      const bookedSeatIds = bookingsForDate.flatMap(b => b.seats || []);
+      
+      const leftSeats = (t.seats || []).filter(s => !bookedSeatIds.includes(s.seat_number));
+      
+        // const availableSeats = t.seats || [];
+        const seatsInfo = (t.seats || []).map(seat => ({
+          ...seat,
+          isBooked: bookedSeatIds.includes(seat.seat_number)
+         }));
+      
+        const seatPrices = seatsInfo.map(s => parseFloat(s.price) || 0);
         const minSeatPrice = seatPrices.length ? Math.min(...seatPrices) : 0;
   
         const pickupIdInt = pickupPoint ? parseInt(pickupPoint) : null;
         let pickupPointsArr = [];
-        if (pickupIdInt && t.pickup_points.includes(pickupIdInt)) {
+        if (pickupIdInt && t.pickup_points && t.pickup_points.includes(pickupIdInt)) {
           pickupPointsArr = await fetchPointNames([pickupIdInt], PickupPoint);
         }
   
         const dropIdInt = dropPoint ? parseInt(dropPoint) : null;
         let dropPointsArr = [];
-        if (dropIdInt && t.drop_points.includes(dropIdInt)) {
+        if (dropIdInt && t.drop_points && t.drop_points.includes(dropIdInt)) {
           dropPointsArr = await fetchPointNames([dropIdInt], DropPoint);
         }
   
@@ -938,7 +1018,7 @@ const tripService = {
         // Backend filters: price, seats, time
         if (minPrice && minSeatPrice < minPrice) continue;
         if (maxPrice && minSeatPrice > maxPrice) continue;
-        if (minSeats && availableSeats.length < minSeats) continue;
+        if (minSeats && seatsInfo.length < minSeats) continue;
   
         if (timeRange) {
           const hour = new Date(t.start_time).getHours();
@@ -956,10 +1036,11 @@ const tripService = {
           endTime: t.end_time,
           duration: t.duration,
           availableSeats: leftSeats.length,
-          seatsInfo: availableSeats,
+          seatsInfo: seatsInfo,
           pickupPoint: pickupPointsArr[0],
           dropPoint: dropPointsArr[0],
           meals: t.meals || [],
+          isRecurring: t.is_recurring || false,
           carInfo: {
             id: t.Car?.id,
             name: t.Car?.carName,
@@ -997,7 +1078,8 @@ const tripService = {
   },
   
   
-  getSeatsForTrip: async (tripId) => {
+  getSeatsForTrip: async (tripId, journeyDate = null) => {
+    // Get the trip with its seats
     const trip = await Trip.findByPk(tripId, {
       include: [
         {
@@ -1013,7 +1095,52 @@ const tripService = {
       throw new NotFound('Trip not found');
     }
 
-    return trip.seats || [];
+    // If no journeyDate provided, return seats as is (for backward compatibility)
+    if (!journeyDate) {
+      return trip.seats || [];
+    }
+
+    // For non-recurring trips, only allow the original date
+    if (!trip.isRecurring) {
+      const tripDate = new Date(trip.startTime).toISOString().split('T')[0];
+      if (journeyDate !== tripDate) {
+        throw new Error('This is a one-time trip and is only available on ' + tripDate);
+      }
+    } else {
+      // For recurring trips, ensure the requested date is not before the trip's start date
+      const tripStartDate = new Date(trip.startTime).toISOString().split('T')[0];
+      if (journeyDate < tripStartDate) {
+        throw new Error('Journey date cannot be before the trip start date');
+      }
+    }
+
+    // Get all bookings for this trip on the specified date
+    const bookings = await Booking.findAll({
+      where: {
+        tripId,
+        journeyDate: new Date(journeyDate)
+      },
+      raw: true
+    });
+
+    // Extract all booked seat IDs
+    const bookedSeatIds = new Set();
+    bookings.forEach(booking => {
+      try {
+        const seats = JSON.parse(booking.seats);
+        seats.forEach(seat => bookedSeatIds.add(seat.seatId));
+      } catch (e) {
+        console.error('Error parsing seats for booking:', booking.id, e);
+      }
+    });
+
+    // Mark seats as booked if they're in the bookedSeatIds set
+    const seats = trip.seats.map(seat => ({
+      ...seat.get({ plain: true }),
+      isBooked: bookedSeatIds.has(seat.id) || seat.isBooked
+    }));
+
+    return seats;
   },
 
   deleteTrip: async (id) => {

@@ -87,6 +87,20 @@ const Trip = sequelize.define('Trip', {
     type: DataTypes.DATE,
     allowNull: true,
     field: 'updated_at'
+  },
+  isRecurring: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'is_recurring',
+    comment: 'Indicates if this is a recurring trip'
+  },
+  repeatType: {
+    type: DataTypes.ENUM('none', 'daily'),
+    allowNull: false,
+    defaultValue: 'none',
+    field: 'repeat_type',
+    comment: 'Type of repetition for the trip (none, daily)'
   }
 }, {
   tableName: 'Trips',

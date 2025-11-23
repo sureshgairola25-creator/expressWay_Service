@@ -68,6 +68,12 @@ const Booking = sequelize.define('Booking', {
     allowNull: true,
     defaultValue: {},
   },
+  journeyDate: {
+    type: DataTypes.DATEONLY,
+    allowNull: true,
+    field: 'journey_date',
+    comment: 'The actual date of the journey for recurring trips'
+  },
   
   // Future-proofing fields
   // couponId: {

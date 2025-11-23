@@ -4,10 +4,17 @@ const asyncHandler = require('../../middleware/async');
 
 const bookingController = {
   initiateBooking: asyncHandler(async (req, res) => {
+    const { journeyDate } = req.body;
+    
+    if (!journeyDate) {
+      throw new Error('journeyDate is required in YYYY-MM-DD format');
+    }
+    
     const result = await bookingService.initiateBooking({
       ...req.body,
       customerEmail: req.body.customerEmail,
       customerPhone: req.body.customerPhone,
+      journeyDate, // Pass journeyDate to service
     });
 
     res.status(201).json({
