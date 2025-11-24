@@ -171,6 +171,7 @@ const bookingService = {
       where: {
         tripId,
         journeyDate: new Date(journeyDate),
+        paymentStatus: 'completed'
       },
       raw: true,
     });
