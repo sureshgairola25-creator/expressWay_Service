@@ -48,26 +48,20 @@ const Trip = sequelize.define('Trip', {
     allowNull: false,
     field: 'start_time',
     get() {
-      // Return the raw value without timezone conversion
-      return this.getDataValue('startTime');
-    },
-    set(value) {
-      // Store the value as-is without timezone conversion 
-      this.setDataValue('startTime', value);
+      const value = this.getDataValue('startTime');
+      return value ? toIST(value) : null;
     }
+    // Removed setter to prevent timezone conversion on save
   },
   endTime: {
     type: DataTypes.DATE,
     allowNull: false,
     field: 'end_time',
     get() {
-      // Return the raw value without timezone conversion
-      return this.getDataValue('endTime');
-    },
-    set(value) {
-      // Store the value as-is without timezone conversion
-      this.setDataValue('endTime', value);
+      const value = this.getDataValue('endTime');
+      return value ? toIST(value) : null;
     }
+    // Removed setter to prevent timezone conversion on save
   },
   duration: {
     type: DataTypes.STRING,
