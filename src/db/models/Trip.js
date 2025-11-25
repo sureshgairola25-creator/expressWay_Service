@@ -47,20 +47,20 @@ const Trip = sequelize.define('Trip', {
     type: DataTypes.DATE,
     allowNull: false,
     field: 'start_time',
-    get() {
-      const value = this.getDataValue('startTime');
-      return value ? toIST(value) : null;
-    }
+    // get() {
+    //   const value = this.getDataValue('startTime');
+    //   return value ? toIST(value) : null;
+    // }
     // Removed setter to prevent timezone conversion on save
   },
   endTime: {
     type: DataTypes.DATE,
     allowNull: false,
     field: 'end_time',
-    get() {
-      const value = this.getDataValue('endTime');
-      return value ? toIST(value) : null;
-    }
+    // get() {
+    //   const value = this.getDataValue('endTime');
+    //   return value ? toIST(value) : null;
+    // }
     // Removed setter to prevent timezone conversion on save
   },
   duration: {
@@ -104,24 +104,24 @@ const Trip = sequelize.define('Trip', {
   createdAt: 'created_at',
   updatedAt: 'updated_at',
   underscored: true,
-  hooks: {
-    beforeCreate: (trip) => {
-      if (trip.startTime) {
-        trip.startTime = toIST(trip.startTime);
-      }
-      if (trip.endTime) {
-        trip.endTime = toIST(trip.endTime);
-      }
-    },
-    beforeUpdate: (trip) => {
-      if (trip.changed('startTime') && trip.startTime) {
-        trip.startTime = toIST(trip.startTime);
-      }
-      if (trip.changed('endTime') && trip.endTime) {
-        trip.endTime = toIST(trip.endTime);
-      }
-    }
-  }
+  // hooks: {
+  //   beforeCreate: (trip) => {
+  //     if (trip.startTime) {
+  //       trip.startTime = toIST(trip.startTime);
+  //     }
+  //     if (trip.endTime) {
+  //       trip.endTime = toIST(trip.endTime);
+  //     }
+  //   },
+  //   beforeUpdate: (trip) => {
+  //     if (trip.changed('startTime') && trip.startTime) {
+  //       trip.startTime = toIST(trip.startTime);
+  //     }
+  //     if (trip.changed('endTime') && trip.endTime) {
+  //       trip.endTime = toIST(trip.endTime);
+  //     }
+  //   }
+  // }
 });
 
 // Define associations
