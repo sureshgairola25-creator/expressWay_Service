@@ -259,16 +259,21 @@ const tripService = {
           endLocation: d.EndLocation
         })),
         carInfo: trip.Car,
-        startTime: trip.startTime,
-        endTime: trip.endTime,
+        // startTime: trip.startTime,
+        // endTime: trip.endTime,
         duration: trip.duration,
         status: trip.status,
         availableSeats,
         bookedSeats,
         minSeatPrice,
         seatsInfo: seats,
-        created_at: trip.created_at,
-        updated_at: trip.updated_at
+        // created_at: trip.created_at,
+        // updated_at: trip.updated_at
+        startTime: toIST(trip.startTime),
+        endTime: toIST(trip.endTime),
+        created_at: toIST(trip.created_at),
+        updated_at: toIST(trip.updated_at)
+
       };
     }));
 
