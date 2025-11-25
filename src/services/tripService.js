@@ -15,7 +15,7 @@ const {
 const { Op, Sequelize } = require('sequelize');
 const { NotFound } = require('http-errors');
 const { BadRequestError, ConflictError } = require('../utils/errors');
-const { calculateDuration, toIST, nowIST, toISTString } = require('../utils/dateUtils');
+const { calculateDuration, toIST, nowIST, toISTString, toISTLuxon } = require('../utils/dateUtils');
 
 const tripService = {
   createTrip: async (data, options = {}) => {
@@ -269,10 +269,10 @@ const tripService = {
         seatsInfo: seats,
         // created_at: trip.created_at,
         // updated_at: trip.updated_at
-        startTime: toIST(trip.startTime),
-        endTime: toIST(trip.endTime),
-        created_at: toIST(trip.created_at),
-        updated_at: toIST(trip.updated_at)
+        startTime: toISTLuxon(trip.startTime),
+        endTime: toISTLuxon(trip.endTime),
+        created_at: toISTLuxon(trip.created_at),
+        updated_at: toISTLuxon(trip.updated_at)
 
       };
     }));

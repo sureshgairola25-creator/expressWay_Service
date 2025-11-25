@@ -1,3 +1,14 @@
+const { DateTime } = require("luxon");
+
+
+function toISTLuxon(date) {
+  if (!date) return null;
+
+  return DateTime.fromJSDate(new Date(date), { zone: "utc" })
+    .setZone("Asia/Kolkata")
+    .toFormat("yyyy-MM-dd HH:mm:ss");
+}
+
 /**
  * Converts a date to Indian Standard Time (IST)
  * @param {Date|string} date - Date to convert
@@ -63,6 +74,7 @@ const toMySQLDateTime = (date) => {
 module.exports = {
   calculateDuration,
   toIST,
+  toISTLuxon,
   toISTString,
   nowIST,
   toMySQLDateTime
