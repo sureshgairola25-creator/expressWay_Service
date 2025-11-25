@@ -52,7 +52,7 @@ const Trip = sequelize.define('Trip', {
       return this.getDataValue('startTime');
     },
     set(value) {
-      // Store the value as-is without timezone conversion
+      // Store the value as-is without timezone conversion 
       this.setDataValue('startTime', value);
     }
   },
