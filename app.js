@@ -37,6 +37,7 @@ const db = require('./src/db/models');
 // Import routes
 const indexRouter = require('./src/index');
 const authRouter = require('./src/routes/authRoutes');
+const reviewRouter = require('./src/routes/reviewRoutes');
 const CashfreeWebhook = require('./src/controllers/cashfreeWebhook');
 
 // Initialize express app

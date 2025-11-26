@@ -13,7 +13,22 @@ const SeatPricing = require('./SeatPricing');
 const User = require('./User');
 const PasswordResetToken = require('./PasswordResetToken');
 const CouponModel = require('./coupon');
+const Review = require('./Review');
 const Coupon = CouponModel(sequelize, require('sequelize').DataTypes);
+
+// Initialize Review model
+const ReviewModel = Review(sequelize, require('sequelize').DataTypes);
+
+// Setup review hooks after all models are defined
+const { setupReviewHooks } = require('../hooks/reviewHooks');
+
+// Setup review hooks after all models are defined
+const setupHooks = () => {
+  setupReviewHooks(sequelize);
+};
+
+// Call setupHooks after all associations are defined
+setupHooks();
 
 // Associations
 // User - PasswordResetToken association
@@ -48,6 +63,30 @@ Trip.belongsTo(StartLocation, {
   foreignKey: 'startLocationId',
   as: 'startLocation'
 });
+
+// Review Associations
+if (ReviewModel.associate) {
+  ReviewModel.associate({
+    User,
+    Booking,
+    Trip,
+    // Add other models if needed
+  });
+}
+
+// Add review stats to Trip model
+Trip.prototype.getReviewStats = async function() {
+  const reviews = await this.getReviews();
+  const count = reviews.length;
+  const avgRating = count > 0 
+    ? reviews.reduce((sum, review) => sum + review.rating, 0) / count 
+    : 0;
+  
+  return {
+    reviewCount: count,
+    averageRating: parseFloat(avgRating.toFixed(1))
+  };
+};
 
 // Trip-EndLocation Association
 EndLocation.hasMany(Trip, { 
@@ -152,7 +191,7 @@ Booking.belongsTo(User, {
   as: 'user' 
 });
 
-const db = {
+module.exports = {
   sequelize,
   StartLocation,
   PickupPoint,
@@ -162,11 +201,11 @@ const db = {
   Car,
   Trip,
   Seat,
-  SeatPricing,
   Booking,
   BookedSeat,
+  SeatPricing,
   User,
-  Coupon
+  Coupon,
+  PasswordResetToken,
+  Review: ReviewModel,
 };
-
-module.exports = db;

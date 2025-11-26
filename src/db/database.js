@@ -43,9 +43,6 @@ const sequelizeConfig = {
     dateStrings: true,
     supportBigNumbers: true,
     bigNumberStrings: true,
-    query: { 
-      sql: 'SET SESSION sql_mode=(SELECT REPLACE(@@sql_mode,\'ONLY_FULL_GROUP_BY\',\'\'));' 
-    },
     typeCast: function (field, next) {
       if (field.type === 'DATETIME' || field.type === 'TIMESTAMP') {
         const value = field.string();

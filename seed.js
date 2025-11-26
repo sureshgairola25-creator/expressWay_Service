@@ -7,7 +7,7 @@ async function seedDatabase() {
     console.log('🚀 Starting database seeding...');
     
     // Disable foreign key checks
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 0', { raw: true });
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
     
     // Sync all models with the database
     await sequelize.authenticate();
@@ -253,7 +253,7 @@ async function seedDatabase() {
     console.log(`✅ All trips scheduled for ${today.toDateString()}`);
 
     // Enable foreign key checks
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1', { raw: true });
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
     
     // Commit the transaction
     await transaction.commit();

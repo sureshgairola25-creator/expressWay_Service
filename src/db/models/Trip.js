@@ -160,4 +160,22 @@ Trip.associate = (models) => {
   });
 };
 
+// Instance method to get review statistics
+Trip.prototype.getReviewStats = async function() {
+  const reviews = await this.getReviews({
+    attributes: ['rating'],
+    raw: true
+  });
+
+  const reviewCount = reviews.length;
+  const averageRating = reviewCount > 0 
+    ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviewCount
+    : 0;
+
+  return {
+    reviewCount,
+    averageRating: parseFloat(averageRating.toFixed(1))
+  };
+};
+
 module.exports = Trip;

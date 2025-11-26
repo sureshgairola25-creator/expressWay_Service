@@ -10,6 +10,7 @@ const trip = require('./routes/tripRoutes');
 const admin = require('./routes/admin');
 const couponRoutes = require('./routes/couponRoutes');
 const authRouter = require('./routes/authRoutes');
+const reviewRouter = require('./routes/reviewRoutes');
 const router = express.Router();
 
 // router.use('/', root);
@@ -27,6 +28,7 @@ router.use('/payment', payment);
 router.use('/user', user);
 router.use('/auth', authRouter);
 router.use('/coupons', couponRoutes);
+router.use('/reviews', reviewRouter);
 
 
 module.exports = router;

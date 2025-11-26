@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { User } = require('../db/models');
+const { sequelize } = require('../db/database');
+const { User, Booking, Review, Trip, Car, Location } = require('../db/models');
 const { Conflict, Unauthorized, BadRequest, NotFound } = require('http-errors');
 const { OAuth2Client } = require('google-auth-library');
 const { sendEmail } = require('../lib/email');
@@ -234,22 +235,31 @@ const userService = {
   },
 
   getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
-    const { Trip, Booking, Car, StartLocation, EndLocation, PickupPoint, DropPoint } = require('../db/models');
+    const { 
+      Trip, 
+      Booking, 
+      Car, 
+      StartLocation, 
+      EndLocation, 
+      PickupPoint, 
+      DropPoint,
+      Review 
+    } = require('../db/models');
+    
     const offset = (page - 1) * limit;
-    const now = new Date();
 
     try {
-      // Fetch user's bookings with related trip, car, and location data
+      // 1. Fetch user's bookings with related trip, car, and location data
       const { count, rows: bookings } = await Booking.findAndCountAll({
         where: { userId },
         include: [
           {
             model: Trip,
-            as: 'trip',  // Add this line to specify the alias
+            as: 'trip',
             include: [
               { 
                 model: Car,
-                as: 'Car'  // Add this if Car is also using an alias in the model definition
+                as: 'Car'
               },
               { 
                 model: StartLocation,
@@ -270,18 +280,44 @@ const userService = {
             as: 'dropPoint'
           }
         ],
-        order: [
-          ['id', 'DESC']
-        ],
+        order: [['id', 'DESC']],
         offset,
         limit: parseInt(limit, 10)
       });
 
-      // Format the response according to the required structure
+      // 2. Get all booking IDs to fetch reviews in one query
+      const bookingIds = bookings.map(booking => booking.id);
+      
+      // 3. Fetch all reviews for these bookings in one query using the model
+      // console.log('Fetching reviews for booking IDs:', bookingIds);
+      let reviewMap = new Map();
+      
+      if (bookingIds.length > 0) {
+        const reviews = await sequelize.query(
+          'SELECT id, booking_id, rating, feedback FROM Reviews WHERE booking_id IN (?)',
+          {
+            replacements: [bookingIds],
+            type: sequelize.QueryTypes.SELECT,
+            logging: console.log
+          }
+        );
+        console.log(reviews,'reviews 304');
+        
+        // 4. Create a map of bookingId -> review for O(1) lookups
+        reviews.forEach(review => {
+          reviewMap.set(review.booking_id, {
+            id: review.id,
+            rating: review.rating,
+            feedback: review.feedback
+          });
+        });
+      }
+
+      // 5. Format the response with review information
       const formatRide = (booking) => {
-        const trip = booking.trip; // Use lowercase 'trip' to match the alias
+        const trip = booking.trip;
         const startTime = new Date(trip.startTime);
-        console.log("booking",booking.bookingStatus);
+        
         // Map booking status to the required format
         let status = 'Confirmed';
         if (booking.bookingStatus === 'cancelled') {
@@ -291,6 +327,17 @@ const userService = {
         } else if (booking.bookingStatus === 'initiated' && booking.paymentStatus === 'pending') {
           status = 'Pending';
         }
+
+        // Check if booking has a review
+        const review = reviewMap.get(booking.id);
+        console.log(review,'review 332');
+        
+        const hasReview = !!review;
+        const reviewRating = hasReview ? review.rating : null;
+        const reviewFeedback = hasReview ? review.feedback : null;
+        
+        // Determine if user can review
+        const canReview = (status === 'Confirmed' || status === 'Completed') && !hasReview;
 
         // Format date and time
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
@@ -307,15 +354,23 @@ const userService = {
           duration: calculateDuration(startTime, trip.endTime),
           pickup: booking.pickupPoint?.name || trip.startLocation?.name || 'Pickup Location',
           dropoff: booking.dropPoint?.name || trip.endLocation?.name || 'Dropoff Location',
-          fare: parseFloat(booking.totalAmount)
+          journeyDate: booking.journeyDate,
+          fare: parseFloat(booking.totalAmount),
+          hasReview,
+          canReview,
+          reviewRating,
+          reviewFeedback
         };
       };
 
-      // Format all rides
+      // 6. Format all rides
       const rides = bookings.map(booking => formatRide(booking));
 
       return {
         success: true,
+        total: count,
+        page,
+        limit: parseInt(limit, 10),
         rides
       };
     } catch (error) {
