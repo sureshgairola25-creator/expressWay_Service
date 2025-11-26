@@ -11,10 +11,16 @@ const Booking = require('./Booking');
 const BookedSeat = require('./BookedSeat');
 const SeatPricing = require('./SeatPricing');
 const User = require('./User');
+const PasswordResetToken = require('./PasswordResetToken');
 const CouponModel = require('./coupon');
 const Coupon = CouponModel(sequelize, require('sequelize').DataTypes);
 
 // Associations
+// User - PasswordResetToken association
+User.hasMany(PasswordResetToken, { foreignKey: 'userId' });
+PasswordResetToken.belongsTo(User, { foreignKey: 'userId' });
+
+// Other associations
 StartLocation.hasMany(PickupPoint, { foreignKey: 'startLocationId' });
 PickupPoint.belongsTo(StartLocation, { foreignKey: 'startLocationId' });
 

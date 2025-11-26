@@ -9,6 +9,7 @@ const car = require('./routes/carRoutes');
 const trip = require('./routes/tripRoutes');
 const admin = require('./routes/admin');
 const couponRoutes = require('./routes/couponRoutes');
+const authRouter = require('./routes/authRoutes');
 const router = express.Router();
 
 // router.use('/', root);
@@ -24,6 +25,7 @@ router.use('/seat-pricing', seatPricing);
 router.use('/booking', booking);
 router.use('/payment', payment);
 router.use('/user', user);
+router.use('/auth', authRouter);
 router.use('/coupons', couponRoutes);
 
 

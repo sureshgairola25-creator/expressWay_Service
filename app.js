@@ -36,6 +36,7 @@ const db = require('./src/db/models');
 
 // Import routes
 const indexRouter = require('./src/index');
+const authRouter = require('./src/routes/authRoutes');
 const CashfreeWebhook = require('./src/controllers/cashfreeWebhook');
 
 // Initialize express app
@@ -68,13 +69,17 @@ if (process.env.NODE_ENV === 'development') {
   app.use(logger('dev'));
 }
 
-// Limit requests from same API
-const limiter = rateLimit({
+// API rate limiting
+const apiLimiter = rateLimit({
   max: 100, // 100 requests per windowMs
   windowMs: 15 * 60 * 1000, // 15 minutes
-  message: 'Too many requests from this IP, please try again in 15 minutes!'
+  message: 'Too many requests from this IP, please try again in 15 minutes!',
+  standardHeaders: true,
+  legacyHeaders: false
 });
-app.use('/api', limiter);
+
+// Apply rate limiting to API routes
+app.use('/api', apiLimiter);
 
 // Body parser, reading data from body into req.body
 app.use(express.json({ limit: '10kb' }));

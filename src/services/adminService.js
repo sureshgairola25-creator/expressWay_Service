@@ -49,6 +49,9 @@ const adminService = {
         ],
       },
     ],
+    where: {
+      bookingStatus: 'confirmed'  // Only include confirmed bookings
+    },
     group: [Sequelize.literal("route")],
     order: [[Sequelize.fn('SUM', Sequelize.col('Booking.total_amount')), 'DESC']],
     raw: true,
