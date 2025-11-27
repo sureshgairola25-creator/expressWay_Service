@@ -12,6 +12,8 @@ const payment = require('./paymentRoutes');
 const booking = require('./bookingRoutes');
 const coupon = require('./couponRoutes');
 const review = require('./reviewRoutes');
+const backgroundImage = require('./backgroundImageRoutes');
+
 module.exports = {
   root,
   user,
@@ -26,5 +28,6 @@ module.exports = {
   booking,
   coupon,
   user,
-  review
+  review,
+  backgroundImage
 };

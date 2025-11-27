@@ -2,7 +2,7 @@ const sgMail = require('@sendgrid/mail');
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-const sendEmail = async (to, subject, text) => {
+const sendEmail = async (to, subject, html) => {
   try {
     // Check if SendGrid API key is configured
     if (!process.env.SENDGRID_API_KEY) {
@@ -14,7 +14,10 @@ const sendEmail = async (to, subject, text) => {
       to,
       from: process.env.SENDGRID_FROM_EMAIL, // This should be a verified sender in SendGrid
       subject,
-      text,
+      html,
+      mailSettings: {
+        clickTracking: { enable: false },
+      }
     };
     console.log(msg, 'msg sent');
     

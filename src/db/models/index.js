@@ -14,6 +14,7 @@ const User = require('./User');
 const PasswordResetToken = require('./PasswordResetToken');
 const CouponModel = require('./coupon');
 const Review = require('./Review');
+const BackgroundImage = require('./BackgroundImage');
 const Coupon = CouponModel(sequelize, require('sequelize').DataTypes);
 
 // Initialize Review model
@@ -208,4 +209,5 @@ module.exports = {
   Coupon,
   PasswordResetToken,
   Review: ReviewModel,
+  BackgroundImage
 };

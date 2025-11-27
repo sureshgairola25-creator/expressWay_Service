@@ -8,6 +8,13 @@ const Booking = sequelize.define('Booking', {
     autoIncrement: true,
     field: 'id'
   },
+  bookingId: {
+    type: DataTypes.STRING,
+    unique: true,
+    allowNull: false,
+    field: 'bookingId',
+    comment: 'Custom booking ID in format ECXXXX'
+  },
   userId: {
     type: DataTypes.INTEGER,
     allowNull: false,

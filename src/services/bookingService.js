@@ -6,6 +6,67 @@ const { sequelize } = require('../db/database');
 const { Op } = require('sequelize');
 const { NotFound, BadRequest } = require('http-errors');
 const paymentService = require('./paymentService');
+// Helper function to generate the next booking ID
+const generateNextBookingId = async () => {
+  try {
+    // First, check if the bookingId column exists
+    const [results] = await sequelize.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+       WHERE TABLE_SCHEMA = '${sequelize.config.database}' 
+       AND TABLE_NAME = 'Bookings' 
+       AND COLUMN_NAME = 'bookingId'`
+    );
+    
+    // If bookingId column doesn't exist yet, return a timestamp-based ID
+    if (results.length === 0) {
+      return `TMP${Date.now().toString().slice(-8)}`;
+    }
+    
+    // Start a transaction to ensure no race conditions
+    const transaction = await sequelize.transaction();
+    
+    try {
+      // Get the last booking with a bookingId
+      const lastBooking = await Booking.findOne({
+        attributes: ['bookingId'],
+        where: {
+          bookingId: {
+            [Op.like]: 'EC%'
+          }
+        },
+        order: [['id', 'DESC']],
+        transaction,
+        lock: transaction.LOCK.UPDATE // Lock the row for update
+      });
+
+      let nextNumber = 1;
+      
+      if (lastBooking && lastBooking.bookingId) {
+        // Extract the number part and increment
+        const lastNumber = parseInt(lastBooking.bookingId.replace('EC', ''), 10);
+        if (!isNaN(lastNumber)) {
+          nextNumber = lastNumber + 1;
+        }
+      }
+
+      // Format the new booking ID (EC followed by 4-digit number)
+      const bookingId = `EC${nextNumber.toString().padStart(4, '0')}`;
+      
+      await transaction.commit();
+      return bookingId;
+    } catch (error) {
+      await transaction.rollback();
+      console.error('Error generating booking ID:', error);
+      // Fallback to timestamp-based ID if there's an error
+      return `EC${Date.now().toString().slice(-4)}`;
+    }
+  } catch (error) {
+    console.error('Error checking for bookingId column:', error);
+    // Fallback to timestamp-based ID if we can't check the column
+    return `TMP${Date.now().toString().slice(-8)}`;
+  }
+};
+
 const bookingService = {
   //   const { userId, tripId, pickupPointId, dropPointId, selectedSeats, totalAmount, customerEmail, customerPhone } = bookingData;
 
@@ -295,9 +356,13 @@ const bookingService = {
     let booking;
   
     try {
+      // Generate the next booking ID
+      const bookingId = await generateNextBookingId();
+      
       // Create booking with initiated status
       booking = await Booking.create(
         {
+          bookingId,
           userId,
           tripId,
           pickupPointId,

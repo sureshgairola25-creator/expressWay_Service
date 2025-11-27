@@ -43,6 +43,12 @@ const CashfreeWebhook = require('./src/controllers/cashfreeWebhook');
 // Initialize express app
 const app = express();
 
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+
 
 app.post(
   "/cashfree/webhook",
@@ -85,6 +91,9 @@ app.use('/api', apiLimiter);
 // Body parser, reading data from body into req.body
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+
+// Cookie parser - must be before the routes that use cookies
+app.use(cookieParser());
 
 // Data sanitization against NoSQL query injection
 app.use(mongoSanitize());

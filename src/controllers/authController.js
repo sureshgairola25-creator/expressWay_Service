@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { Op, Sequelize } = require('sequelize');
+const { google } = require('googleapis');
+const jwt = require('jsonwebtoken');
 const sequelize = require('../db/database');
 const { sendEmail } = require('../lib/email');
 const User = require('../db/models/User');
@@ -29,11 +31,23 @@ const generateResetToken = async () => {
 const sendPasswordResetEmail = async (email, token) => {
   try {
     // Default to http://localhost:3000 if FRONTEND_URL is not set
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = process.env.CLIENT_URL || 'http://localhost:5173';
     const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
     const subject = 'Password Reset Request';
-    const message = `Click the following link to reset your password: ${resetUrl}\n\nThis link will expire in ${TOKEN_EXPIRY_MINUTES} minutes.`;
-    
+    // const message = `Click the following link to reset your password: ${resetUrl}\n\nThis link will expire in ${TOKEN_EXPIRY_MINUTES} minutes.`;
+    const message = `
+  <div style="font-family: Arial; font-size: 15px;">
+    <p>Click the link below to reset your password:</p>
+
+    <a href="${resetUrl}" 
+       style="color: #1a73e8; text-decoration: underline; font-weight: bold;">
+       Click here
+    </a>
+
+    <p>This link will expire in 30 minutes.</p>
+  </div>
+`;
+
     // Use the same email sending function as in the signup process
     return await sendEmail(email, subject, message);
   } catch (error) {

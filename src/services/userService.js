@@ -356,6 +356,7 @@ const userService = {
           dropoff: booking.dropPoint?.name || trip.endLocation?.name || 'Dropoff Location',
           journeyDate: booking.journeyDate,
           fare: parseFloat(booking.totalAmount),
+          bookingId: booking.bookingId,
           hasReview,
           canReview,
           reviewRating,
