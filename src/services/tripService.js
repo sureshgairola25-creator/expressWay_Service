@@ -1023,15 +1023,52 @@ const tripService = {
         // Backend filters: price, seats, time
         if (minPrice && minSeatPrice < minPrice) continue;
         if (maxPrice && minSeatPrice > maxPrice) continue;
-        if (minSeats && seatsInfo.length < minSeats) continue;
-  
-        if (timeRange) {
-          const hour = new Date(t.start_time).getHours();
-          if (timeRange === "morning" && (hour < 6 || hour >= 12)) continue;
-          if (timeRange === "afternoon" && (hour < 12 || hour >= 18)) continue;
-          if (timeRange === "evening" && (hour < 18 || hour >= 21)) continue;
-          if (timeRange === "night" && !(hour >= 21 || hour < 6)) continue;
+        
+        // Fix minSeats filter - count only available seats
+        if (minSeats) {
+          const availableSeatsCount = seatsInfo.filter(s => !s.isBooked).length;
+          if (availableSeatsCount < minSeats) continue;
         }
+  
+        // // Fix timeRange filter - handle IST timezone
+        // if (timeRange) {
+        //   // Create date in local timezone (IST)
+        //   const date = new Date(t.start_time);
+        //   // Get IST hours (UTC+5:30)
+        //   const istHour = (date.getUTCHours() + 5.5) % 24;
+        //   console.log('IST Hour:', istHour, 'UTC Time:', date.toISOString(), 'Time Range:', timeRange);
+          
+        //   // Handle time ranges in IST
+        //   if (timeRange === "morning" && (istHour < 6 || istHour >= 12)) {
+        //     continue;
+        //   } else if (timeRange === "afternoon" && (istHour < 12 || istHour >= 17)) {
+        //     continue;
+        //   } else if (timeRange === "evening" && (istHour < 17 || istHour >= 21)) {
+        //     continue;
+        //   } else if (timeRange === "night" && !(istHour >= 21 || istHour < 6)) {
+        //     continue;
+        //   }
+        // }
+
+        if (timeRange) {
+          const date = new Date(t.start_time);
+          const istHour = (date.getUTCHours() + 5.5) % 24;
+          
+          const isMorning   = istHour >= 6 && istHour < 12;
+          const isAfternoon = istHour >= 12 && istHour < 17;
+          const isEvening   = istHour >= 17 && istHour < 21;
+          const isNight     = istHour >= 21 || istHour < 6;
+        
+          if (
+            (timeRange === "morning"   && !isMorning)   ||
+            (timeRange === "afternoon" && !isAfternoon) ||
+            (timeRange === "evening"   && !isEvening)   ||
+            (timeRange === "night"     && !isNight)
+          ) {
+            continue;
+          }
+        }
+        
   
         filteredTrips.push({
           id: t.id,
