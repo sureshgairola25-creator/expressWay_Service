@@ -251,7 +251,7 @@ const userService = {
     try {
       // 1. Fetch user's bookings with related trip, car, and location data
       const { count, rows: bookings } = await Booking.findAndCountAll({
-        where: { userId },
+        where: { userId, bookingStatus: "confirmed" },
         include: [
           {
             model: Trip,
@@ -319,7 +319,7 @@ const userService = {
         const startTime = new Date(trip.startTime);
         
         // Map booking status to the required format
-        let status = 'Confirmed';
+        let status = 'Completed';
         if (booking.bookingStatus === 'cancelled') {
           status = 'Cancelled';
         } else if (booking.bookingStatus === 'completed') {
@@ -330,7 +330,7 @@ const userService = {
 
         // Check if booking has a review
         const review = reviewMap.get(booking.id);
-        console.log(review,'review 332');
+        // console.log(review,'review 332');
         
         const hasReview = !!review;
         const reviewRating = hasReview ? review.rating : null;
