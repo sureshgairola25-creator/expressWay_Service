@@ -41,6 +41,48 @@ const Car = sequelize.define('Car', {
     // Removed unique constraint completely to avoid MySQL key limit issues
     // If uniqueness is needed, handle it in application logic
   },
+  cabType: {
+  type: DataTypes.ENUM('sharing', 'cabin', 'personalize'),
+  allowNull: false,
+  defaultValue: 'sharing',
+  field: 'cab_type',
+},
+pricePerSeat: {
+  type: DataTypes.DECIMAL(10, 2),
+  allowNull: true,
+  defaultValue: null,
+  field: 'price_per_seat',
+},
+pricePerCabin: {
+  type: DataTypes.DECIMAL(10, 2),
+  allowNull: true,
+  defaultValue: null,
+  field: 'price_per_cabin',
+},
+cabinCapacity: {
+  type: DataTypes.INTEGER,
+  allowNull: true,
+  defaultValue: null,
+  field: 'cabin_capacity',
+},
+totalCabins: {
+  type: DataTypes.INTEGER,
+  allowNull: true,
+  defaultValue: null,
+  field: 'total_cabins',
+},
+pricePerCar: {
+  type: DataTypes.DECIMAL(10, 2),
+  allowNull: true,
+  defaultValue: null,
+  field: 'price_per_car',
+},
+imageUrl: {
+  type: DataTypes.STRING(500),
+  allowNull: true,
+  defaultValue: null,
+  field: 'image_url',
+},
 }, {
   tableName: 'Cars',
   timestamps: true,

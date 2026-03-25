@@ -165,8 +165,8 @@ process.on('unhandledRejection', (err) => {
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION! 💥 Shutting down...');
-  console.error(err.name, err.message);
-  process.exit(1);
+  console.error(err);
+  // process.exit(1);
 });
 
 // Start server

@@ -109,6 +109,22 @@ const Booking = sequelize.define('Booking', {
     field: 'journey_date',
     comment: 'The actual date of the journey for recurring trips'
   },
+  cabinNumber:{
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'cabin_number',
+    comment: 'The cabin number for cabin booking'
+  },
+  passengers: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    field: 'passengers',
+    comment: 'Passenger details for the booking'
+  },
+  bookingType:{
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   
   // Future-proofing fields
   // couponId: {

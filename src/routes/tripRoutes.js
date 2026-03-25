@@ -6,6 +6,9 @@ const router = express.Router();
 // 👉 Search for trips
 router.get("/search", tripController.searchTrips);
 
+// 👉 Search for personalize trips
+router.get("/search-personalize", tripController.searchPersonalizeTrips);
+
 // 👉 Create a new trip
 router.post("/create", tripController.createTrip);
 
