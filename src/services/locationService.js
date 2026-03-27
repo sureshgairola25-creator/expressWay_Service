@@ -245,6 +245,66 @@ const locationService = {
     await dropPoint.destroy();
     return { message: 'Drop point deleted successfully' };
   },
+  getPickupPointsByStartLocation : async (startLocationId) => {
+ 
+  // 1. Get the start location to find its city
+  const startLocation = await StartLocation.findByPk(startLocationId, {
+    attributes: ['id', 'name', 'city']
+  });
+ 
+  if (!startLocation) throw new NotFound('Start location not found');
+ 
+  const city = startLocation.city; // e.g. "delhi"
+ 
+  // 2. Fetch both in parallel:
+  //    a) Specific pickup points for this startLocationId
+  //    b) City-level defaults for this city
+  const [specificPoints, cityDefaults] = await Promise.all([
+ 
+    // Specific to this start location
+    PickupPoint.findAll({
+      where: {
+        startLocationId,
+        status: true,
+        isCityDefault: false   // exclude city defaults from specific query
+      },
+      attributes: ['id', 'name', 'price', 'type', 'description', 'meta'],
+      order: [['type', 'ASC'], ['price', 'ASC']]
+    }),
+ 
+    // City-level defaults (e.g. Mayur Vihar Metro, Botanical Garden Metro for delhi)
+    city ? PickupPoint.findAll({
+      where: {
+        status:         true,
+        isCityDefault:  true,
+        cityDefaultFor: city
+      },
+      attributes: ['id', 'name', 'price', 'type', 'description', 'meta', 'isCityDefault'],
+      order: [['price', 'ASC']]
+    }) : []
+ 
+  ]);
+ 
+  // 3. Format and merge
+  // City defaults always shown first (metro options are prominent)
+  // then specific pickup points
+  const formatPoint = (p) => ({
+    id:             p.id,
+    name:           p.name,
+    type:           p.type,
+    price:          p.price,          // null = use car base price
+    description:    p.description,
+    meta:           p.meta,
+    isCityDefault:  p.isCityDefault || false,
+  });
+ 
+  const result = [
+    ...cityDefaults.map(formatPoint),   // metro defaults first
+    ...specificPoints.map(formatPoint), // then route-specific points
+  ];
+ 
+  return result;
+},
 }
 
 module.exports = locationService;

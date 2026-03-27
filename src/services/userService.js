@@ -234,151 +234,144 @@ const userService = {
     return await User.findAll({where: {isVerified: true,role: 'user'}});
   },
 
-  getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
-    const { 
-      Trip, 
-      Booking, 
-      Car, 
-      StartLocation, 
-      EndLocation, 
-      PickupPoint, 
-      DropPoint,
-      Review 
-    } = require('../db/models');
-    
-    const offset = (page - 1) * limit;
+  // ─────────────────────────────────────────────────────────────────────────────
+// BACKEND FIX — userService.js
+// Replace your current getUserRides with this
+// Fixes:
+// 1. Was only fetching bookingStatus:"confirmed" — now fetches all statuses
+// 2. Adds isUpcoming flag so frontend can split correctly
+// 3. Handles personalize bookings (no pickupPoint/dropPoint)
+// ─────────────────────────────────────────────────────────────────────────────
 
-    try {
-      // 1. Fetch user's bookings with related trip, car, and location data
-      const { count, rows: bookings } = await Booking.findAndCountAll({
-        where: { userId, bookingStatus: "confirmed" },
-        include: [
-          {
-            model: Trip,
-            as: 'trip',
-            include: [
-              { 
-                model: Car,
-                as: 'Car'
-              },
-              { 
-                model: StartLocation,
-                as: 'startLocation'
-              },
-              { 
-                model: EndLocation,
-                as: 'endLocation'
-              }
-            ]
-          },
-          {
-            model: PickupPoint,
-            as: 'pickupPoint'
-          },
-          {
-            model: DropPoint,
-            as: 'dropPoint'
-          }
-        ],
-        order: [['id', 'DESC']],
-        offset,
-        limit: parseInt(limit, 10)
+getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
+  const {
+    Trip, Booking, Car, StartLocation, EndLocation, PickupPoint, DropPoint,
+  } = require('../db/models');
+
+  const offset = (page - 1) * limit;
+
+  try {
+    const { count, rows: bookings } = await Booking.findAndCountAll({
+      where: {
+        userId,
+        // ✅ FIX 1: Include ALL booking statuses, not just "confirmed"
+        // bookingStatus: "confirmed"  ← was wrong, removed
+      },
+      include: [
+        {
+          model: Trip,
+          as: 'trip',
+          include: [
+            { model: Car,           as: 'Car'           },
+            { model: StartLocation, as: 'startLocation' },
+            { model: EndLocation,   as: 'endLocation'   },
+          ],
+        },
+        { model: PickupPoint, as: 'pickupPoint', required: false },
+        { model: DropPoint,   as: 'dropPoint',   required: false },
+      ],
+      order:  [['id', 'DESC']],
+      offset,
+      limit: parseInt(limit, 10),
+    });
+
+    // ── Reviews ───────────────────────────────────────────────────────────────
+    const bookingIds = bookings.map(b => b.id);
+    let reviewMap = new Map();
+
+    if (bookingIds.length > 0) {
+      const reviews = await sequelize.query(
+        'SELECT id, booking_id, rating, feedback FROM Reviews WHERE booking_id IN (?)',
+        { replacements: [bookingIds], type: sequelize.QueryTypes.SELECT }
+      );
+      reviews.forEach(r => {
+        reviewMap.set(r.booking_id, { id: r.id, rating: r.rating, feedback: r.feedback });
       });
+    }
 
-      // 2. Get all booking IDs to fetch reviews in one query
-      const bookingIds = bookings.map(booking => booking.id);
-      
-      // 3. Fetch all reviews for these bookings in one query using the model
-      // console.log('Fetching reviews for booking IDs:', bookingIds);
-      let reviewMap = new Map();
-      
-      if (bookingIds.length > 0) {
-        const reviews = await sequelize.query(
-          'SELECT id, booking_id, rating, feedback FROM Reviews WHERE booking_id IN (?)',
-          {
-            replacements: [bookingIds],
-            type: sequelize.QueryTypes.SELECT,
-            logging: console.log
-          }
-        );
-        console.log(reviews,'reviews 304');
-        
-        // 4. Create a map of bookingId -> review for O(1) lookups
-        reviews.forEach(review => {
-          reviewMap.set(review.booking_id, {
-            id: review.id,
-            rating: review.rating,
-            feedback: review.feedback
-          });
-        });
-      }
+    // ── Today's date string for upcoming/past split ───────────────────────────
+    // Use YYYY-MM-DD string comparison to avoid timezone issues
+    // journeyDate is stored as DATEONLY ("2026-03-27") in DB
+    const todayStr = new Date().toISOString().split('T')[0]; // "2026-03-27"
 
-      // 5. Format the response with review information
-      const formatRide = (booking) => {
-        const trip = booking.trip;
-        const startTime = new Date(trip.startTime);
-        
-        // Map booking status to the required format
-        let status = 'Completed';
-        if (booking.bookingStatus === 'cancelled') {
-          status = 'Cancelled';
-        } else if (booking.bookingStatus === 'completed') {
-          status = 'Completed';
-        } else if (booking.bookingStatus === 'initiated' && booking.paymentStatus === 'pending') {
-          status = 'Pending';
-        }
+    // ── Format each booking ───────────────────────────────────────────────────
+    const formatRide = (booking) => {
+      const trip      = booking.trip;
+      const startTime = new Date(trip.startTime);
 
-        // Check if booking has a review
-        const review = reviewMap.get(booking.id);
-        // console.log(review,'review 332');
-        
-        const hasReview = !!review;
-        const reviewRating = hasReview ? review.rating : null;
-        const reviewFeedback = hasReview ? review.feedback : null;
-        
-        // Determine if user can review
-        const canReview = (status === 'Confirmed' || status === 'Completed') && !hasReview;
+      // Map booking status
+      let status = 'Confirmed';
+      if (booking.bookingStatus === 'cancelled')  status = 'Cancelled';
+      if (booking.bookingStatus === 'completed')  status = 'Completed';
+      if (booking.bookingStatus === 'initiated' && booking.paymentStatus === 'pending') status = 'Pending';
 
-        // Format date and time
-        const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
-        const timeOptions = { hour: '2-digit', minute: '2-digit', hour12: true };
-        
-        return {
-          id: booking.id,
-          status,
-          cabType: `${trip.Car.carType} (${trip.Car.carName}-${trip.Car.carUniqueNumber})`,
-          date: startTime.toLocaleDateString('en-US', dateOptions),
-          time: startTime.toLocaleTimeString('en-US', timeOptions),
-          startLocation: trip.startLocation?.name || 'Start Location',
-          endLocation: trip.endLocation?.name || 'End Location',
-          duration: calculateDuration(startTime, trip.endTime),
-          pickup: booking.pickupPoint?.name || trip.startLocation?.name || 'Pickup Location',
-          dropoff: booking.dropPoint?.name || trip.endLocation?.name || 'Dropoff Location',
-          journeyDate: booking.journeyDate,
-          fare: parseFloat(booking.totalAmount),
-          bookingId: booking.bookingId,
-          hasReview,
-          canReview,
-          reviewRating,
-          reviewFeedback
-        };
-      };
+      // journeyDate from DB: "2026-03-27" (DATEONLY)
+      const journeyDateStr = booking.journeyDate
+        ? (typeof booking.journeyDate === 'string'
+            ? booking.journeyDate.split('T')[0]
+            : new Date(booking.journeyDate).toISOString().split('T')[0])
+        : todayStr;
 
-      // 6. Format all rides
-      const rides = bookings.map(booking => formatRide(booking));
+      // ✅ FIX 2: String comparison — avoids timezone issues entirely
+      const isUpcoming = journeyDateStr >= todayStr && status !== 'Cancelled';
+
+      // Reviews
+      const review        = reviewMap.get(booking.id);
+      const hasReview     = !!review;
+      const canReview     = (status === 'Confirmed' || status === 'Completed') && !hasReview;
+
+      // ✅ FIX 3: Handle personalize bookings — pickupPoint/dropPoint may be null
+      // For personalize: pickup/drop address stored in priceBreakdown
+      const pickupName = booking.pickupPoint?.name
+        || booking.priceBreakdown?.pickupAddress
+        || trip.startLocation?.name
+        || 'Pickup';
+
+      const dropName = booking.dropPoint?.name
+        || booking.priceBreakdown?.dropAddress
+        || trip.endLocation?.name
+        || 'Drop';
 
       return {
-        success: true,
-        total: count,
-        page,
-        limit: parseInt(limit, 10),
-        rides
+        id:            booking.id,
+        bookingId:     booking.bookingId,
+        bookingType:   booking.bookingType || 'sharing',
+        status,
+        isUpcoming,                                  // ← frontend uses this to split
+        journeyDate:   journeyDateStr,               // clean YYYY-MM-DD string
+        journeyTime:   booking.journeyTime || null,
+        cabType:       `${trip.Car?.carType || ''} (${trip.Car?.carName || ''}-${trip.Car?.carUniqueNumber || ''})`,
+        date:          startTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+        time:          startTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+        startLocation: trip.startLocation?.name || 'Start',
+        endLocation:   trip.endLocation?.name   || 'End',
+        duration:      calculateDuration(startTime, trip.endTime),
+        pickup:        pickupName,
+        dropoff:       dropName,
+        fare:          parseFloat(booking.totalAmount || 0),
+        seats:         booking.seats,
+        passengerCount: booking.passengerCount || null,
+        hasReview,
+        canReview,
+        reviewRating:  hasReview ? review.rating   : null,
+        reviewFeedback:hasReview ? review.feedback : null,
       };
-    } catch (error) {
-      console.error('Error in getUserRides:', error);
-      throw error;
-    }
+    };
+
+    const rides = bookings.map(formatRide);
+
+    return {
+      success: true,
+      total:   count,
+      page,
+      limit:   parseInt(limit, 10),
+      rides,
+    };
+  } catch (error) {
+    console.error('Error in getUserRides:', error);
+    throw error;
   }
+},
 };
 
 module.exports = userService;

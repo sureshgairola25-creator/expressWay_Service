@@ -1,0 +1,63 @@
+-- Option 1: Disable safe mode just for this query
+-- SET SQL_SAFE_UPDATES = 0;
+
+-- UPDATE StartLocations SET city = 'delhi'
+-- WHERE name IN ('New Delhi', 'Delhi Railway Station', 'Anand Vihar ISBT');
+
+-- SET SQL_SAFE_UPDATES = 1;  -- turn it back on after
+
+
+-- STEP 1: Add city column to StartLocations FIRST
+-- ALTER TABLE StartLocations
+--   ADD COLUMN city VARCHAR(100) DEFAULT NULL;
+
+-- STEP 2: Now tag Delhi start locations
+-- UPDATE StartLocations SET city = 'delhi'
+-- WHERE name IN ('New Delhi', 'Delhi Railway Station', 'Anand Vihar ISBT');
+
+-- STEP 3: Add columns to PickupPoints
+-- ALTER TABLE PickupPoints
+--   ADD COLUMN price            DECIMAL(10,2) DEFAULT NULL,
+--   ADD COLUMN type             VARCHAR(50)   DEFAULT 'standard',
+--   ADD COLUMN description      VARCHAR(255)  DEFAULT NULL,
+--   ADD COLUMN meta             JSON          DEFAULT NULL,
+--   ADD COLUMN is_city_default  TINYINT(1)    DEFAULT 0,
+--   ADD COLUMN city_default_for VARCHAR(100)  DEFAULT NULL;
+
+-- STEP 4: Allow NULL on start_location_id (correct column name)
+ALTER TABLE PickupPoints
+  MODIFY COLUMN start_location_id INT NULL;
+
+-- STEP 5: Insert the 2 metro defaults using correct column name
+INSERT INTO PickupPoints (name, start_location_id, price, type, is_city_default, city_default_for, status, created_at, updated_at)
+VALUES
+  ('Mayur Vihar Metro',      NULL, 899, 'metro', 1, 'delhi', 1, NOW(), NOW()),
+  ('Botanical Garden Metro', NULL, 999, 'metro', 1, 'delhi', 1, NOW(), NOW());
+
+-- Verify
+SELECT id, name, price, type, is_city_default, city_default_for FROM PickupPoints;
+
+
+
+
+SET SQL_SAFE_UPDATES = 0;
+
+UPDATE PickupPoints
+SET
+  description = 'Pink / Blue Line',
+  meta = '{"lines":[{"name":"Pink","color":"#ec4899"},{"name":"Blue","color":"#2563eb"}],"badge":"Save ₹300 with Metro","logoKey":"mayurVihar"}'
+WHERE name = 'Mayur Vihar Metro' AND is_city_default = 1;
+
+UPDATE PickupPoints
+SET
+  description = 'Blue / Magenta Line',
+  meta = '{"lines":[{"name":"Blue","color":"#2563eb"},{"name":"Magenta","color":"#d946ef"}],"badge":"Save ₹300 with Metro","logoKey":"botanicalGarden"}'
+WHERE name = 'Botanical Garden Metro' AND is_city_default = 1;
+SET SQL_SAFE_UPDATES = 1;  -- turn it back on after
+
+-- Verify
+SELECT id, name, meta FROM PickupPoints WHERE is_city_default = 1;
+
+
+'7', 'Mayur Vihar Metro', NULL, '1', '2026-03-26 13:11:05', '2026-03-26 13:11:05', '899.00', 'metro', 'Pink / Blue Line', '{\"badge\": \"Save ₹300 with Metro\", \"lines\": [{\"name\": \"Pink\", \"color\": \"#ec4899\"}, {\"name\": \"Blue\", \"color\": \"#2563eb\"}], \"logoKey\": \"mayurVihar\"}', '1', 'delhi'
+'8', 'Botanical Garden Metro', NULL, '1', '2026-03-26 13:11:05', '2026-03-26 13:11:05', '999.00', 'metro', 'Blue / Magenta Line', '{\"badge\": \"Save ₹300 with Metro\", \"lines\": [{\"name\": \"Blue\", \"color\": \"#2563eb\"}, {\"name\": \"Magenta\", \"color\": \"#d946ef\"}], \"logoKey\": \"botanicalGarden\"}', '1', 'delhi'

@@ -57,6 +57,7 @@ const validateTripAndDate = async (tripId, journeyDate) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: build payment amounts
 // ─────────────────────────────────────────────────────────────────────────────
+// ✅ FIX — use only valid ENUM values
 const buildPaymentAmounts = (totalAmount, paidAmount, paymentMode) => {
   const total     = parseFloat(totalAmount);
   const paid      = parseFloat(paidAmount);
@@ -65,9 +66,10 @@ const buildPaymentAmounts = (totalAmount, paidAmount, paymentMode) => {
     totalAmount:     total,
     paidAmount:      paid,
     remainingAmount: remaining,
-    paymentStatus:   paymentMode === 'full' ? 'completed' : 'partial',
+    paymentStatus:   paymentMode === 'full' ? 'completed' : 'pending', // ✅ "pending" for partial
   };
 };
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: get already booked seat numbers for a trip on a date
@@ -167,8 +169,28 @@ const bookingService = {
       throw new BadRequest(`Seats not found: ${missing.join(', ')}`);
     }
 
-    // Price calculation
-    const seatTotal = seatRecords.reduce((sum, s) => sum + parseFloat(s.price || 0), 0);
+    // Get current car price — source of truth for pricing
+    const car = await Car.findByPk(trip.carId, {
+      attributes: ['pricePerSeat', 'cabType']
+    });
+
+    const pickupPoint = await PickupPoint.findByPk(pickupPointId, {
+  attributes: ['id', 'name', 'price', 'type']
+});
+   // Price priority:
+// 1. Pickup point fixed price (metro/railway) → use it
+// 2. Current car.pricePerSeat → use it (NOT stale seat record price)
+const effectivePricePerSeat =
+  pickupPoint?.price != null
+    ? parseFloat(pickupPoint.price)          // metro: 899 or 999
+    : parseFloat(car?.pricePerSeat || 0);    // standard: current car price
+
+// REPLACE the old seatTotal line:
+// ❌ const seatTotal = seatRecords.reduce((sum, s) => sum + parseFloat(s.price || 0), 0);
+
+// ✅
+const seatTotal = effectivePricePerSeat * seatRecords.length;
+
     let extrasTotal = 0;
     const breakdown = { seatTotal, extras: [], subtotal: 0, coupon: null };
 
@@ -199,6 +221,9 @@ const bookingService = {
     }
 
     const effectiveFinal = parseFloat(finalPayableAmount || totalAmount);
+    if (paymentMode === 'full' && Math.abs(parseFloat(paidAmount) - effectiveFinal) > 0.01) {
+  throw new BadRequest('For full payment, paidAmount must equal totalAmount');
+}
     const amounts = buildPaymentAmounts(effectiveFinal, paidAmount, paymentMode);
 
     // Sanitize passengers — link each to their seat
@@ -300,11 +325,27 @@ const bookingService = {
     if (existingCabinBooking) {
       throw new BadRequest(`Cabin ${cabinNumber} is already booked for this date`);
     }
+    // ✅ AFTER — respect pickup point price if it has one
+    const pickupPt = await PickupPoint.findByPk(pickupPointId, {
+      attributes: ['id', 'name', 'price', 'type']
+    });
 
-    // Price validation
-    const expectedPrice = parseFloat(trip.Car?.pricePerCabin || 0);
-    if (Math.abs(parseFloat(totalAmount) - expectedPrice) > 0.01) {
-      throw new BadRequest(`Cabin price mismatch. Expected ₹${expectedPrice}`);
+    // Price per cabin:
+    // 1. Pickup point has fixed price → use it (metro overrides cabin base price too)
+    // 2. Fall back to car.pricePerCabin
+    const effectivePricePerCabin =
+      pickupPt?.price != null
+        ? parseFloat(pickupPt.price)
+        : parseFloat(trip.Car?.pricePerCabin || 0);
+
+    const bookedCabins = parseInt(cabinNumber);   // how many cabins selected
+    const expectedTotal = effectivePricePerCabin * bookedCabins;
+
+    if (Math.abs(parseFloat(totalAmount) - expectedTotal) > 0.01) {
+      throw new BadRequest(
+        `Cabin price mismatch. Expected ₹${expectedTotal} ` +
+        `(${bookedCabins} cabin(s) × ₹${effectivePricePerCabin})`
+      );
     }
 
     // Get seats in this cabin
@@ -345,7 +386,7 @@ const bookingService = {
         passengers:    sanitizedPassengers,   // ← stored as JSON
         priceBreakdown: {
           cabinNumber,
-          cabinPrice: expectedPrice,
+          cabinPrice: effectivePricePerCabin,
           seats: cabinSeatNumbers,
           passengers: sanitizedPassengers.map(p => p.fullName),
           ...(selectedMeal?.price && {
@@ -393,55 +434,72 @@ const bookingService = {
     }
   },
 
-  // ── UPDATE bookingService.js ──────────────────────────────────────────────────
-// Replace initiatePersonalizeBooking with this full updated version:
- 
+// ─────────────────────────────────────────────────────────────────────────────
+// BACKEND PATCH — bookingService.js
+// In initiatePersonalizeBooking, make these changes:
+// 1. Add pickupAddress to destructured fields
+// 2. Remove pickupPointId / dropPointId as required
+// 3. Store pickupAddress in booking
+// ─────────────────────────────────────────────────────────────────────────────
+
 initiatePersonalizeBooking: async (bookingData) => {
   const {
     userId,
     tripId,
-    pickupPointId,
-    dropPointId,
+
+    // ── Personalize uses manual address — NO pickupPointId/dropPointId ────────
+    pickupAddress,        // FREE-TEXT address entered by user e.g. "A-12, Sector 62, Noida"
+    pickupPointId = null, // kept for DB compatibility, always null for personalize
+    dropPointId   = null, // kept for DB compatibility, always null for personalize
+
     journeyDate,
-    journeyTime,          // NEW — "HH:MM" from time picker
-    passengerCount,       // NEW — number of passengers (pax)
- 
+    journeyTime,          // "HH:MM"
+    passengerCount,
+
     // Customer info
-    fullName,             // NEW — customer full name
+    fullName,
     customerEmail,
     customerPhone,
- 
-    // Optional fields
-    flightTrainNumber,    // NEW — optional flight/train number
-    specialRequests,      // NEW — optional special requests
- 
-    // Pricing
-    baseFare,             // NEW — base price (= car.pricePerCar)
-    gst,                  // NEW — GST amount
-    discount,             // NEW — discount amount
-    totalAmount,          // final payable amount (after gst + discount)
+
+    // Optional
+    flightTrainNumber,
+    specialRequests,
+
+    // Pricing — gst and discount default to 0
+    // Frontend sends: gst=0, discount=0 (no auto GST, no auto discount)
+    // Coupon discount: frontend validates coupon first, then sends discount amount
+    baseFare,
+    gst      = 0,         // always 0 unless explicitly passed
+    discount = 0,         // 0 by default, coupon amount if coupon applied
+    totalAmount,          // baseFare + gst - discount (= baseFare when gst=0, discount=0)
     paidAmount,
     paymentMode = 'full',
- 
+    couponCode  = null,
+
     selectedMeal,
   } = bookingData;
- 
-  // ── Validate user ───────────────────────────────────────────────────────────
+
+  // ── Validate user ────────────────────────────────────────────────────────────
   const user = await User.findByPk(userId);
   if (!user) throw new BadRequest('User not found');
- 
-  // ── Validate trip and date ──────────────────────────────────────────────────
+
+  // ── Validate pickup address ──────────────────────────────────────────────────
+  if (!pickupAddress || !pickupAddress.trim()) {
+    throw new BadRequest('Pickup address is required for personalize booking');
+  }
+
+  // ── Validate trip and date ───────────────────────────────────────────────────
   const trip = await validateTripAndDate(tripId, journeyDate);
- 
+
   if (trip.Car?.cabType !== 'personalize') {
     throw new BadRequest('This trip is not a personalize cab.');
   }
- 
+
   if (trip.isFullyBooked) {
     throw new BadRequest('This trip is already fully booked');
   }
- 
-  // ── Check if already booked for this date ───────────────────────────────────
+
+  // ── Check if already booked for this date ────────────────────────────────────
   const existingBooking = await Booking.findOne({
     where: {
       tripId,
@@ -453,8 +511,8 @@ initiatePersonalizeBooking: async (bookingData) => {
   if (existingBooking) {
     throw new BadRequest('This car is already reserved for the selected date');
   }
- 
-  // ── Passenger count validation ──────────────────────────────────────────────
+
+  // ── Passenger count validation ────────────────────────────────────────────────
   const paxCount   = parseInt(passengerCount);
   const totalSeats = trip.Car?.totalSeats || 0;
   if (paxCount > totalSeats) {
@@ -462,86 +520,88 @@ initiatePersonalizeBooking: async (bookingData) => {
       `Passenger count (${paxCount}) exceeds car capacity (${totalSeats} seats)`
     );
   }
- 
-  // ── Price breakdown validation ──────────────────────────────────────────────
+
+  // ── Price validation ──────────────────────────────────────────────────────────
   const carBasePrice   = parseFloat(trip.Car?.pricePerCar || 0);
   const gstAmount      = parseFloat(gst      || 0);
   const discountAmount = parseFloat(discount || 0);
- 
-  // baseFare from frontend must match car price
+
+  // baseFare must match car price
   if (Math.abs(parseFloat(baseFare) - carBasePrice) > 0.01) {
     throw new BadRequest(`Base fare mismatch. Expected ₹${carBasePrice}`);
   }
- 
-  // Validate final total: baseFare + gst - discount = totalAmount
+
+  // totalAmount = baseFare + gst - discount
+  // When gst=0 and discount=0: totalAmount must equal baseFare
+  // When coupon applied:        totalAmount must equal baseFare - discountAmount
   const expectedTotal = parseFloat(
     (carBasePrice + gstAmount - discountAmount).toFixed(2)
   );
   if (Math.abs(parseFloat(totalAmount) - expectedTotal) > 0.01) {
     throw new BadRequest(
-      `Total amount mismatch. Expected ₹${expectedTotal} (base ₹${carBasePrice} + GST ₹${gstAmount} - discount ₹${discountAmount})`
+      `Total amount mismatch. Expected ₹${expectedTotal}`
     );
   }
- 
-  // ── Build seats list ────────────────────────────────────────────────────────
+
+  // ── Seats list ────────────────────────────────────────────────────────────────
   const allSeats       = await Seat.findAll({ where: { tripId } });
   const allSeatNumbers = allSeats.map(s => s.seatNumber);
   const amounts        = buildPaymentAmounts(totalAmount, paidAmount, paymentMode);
- 
-  // ── Price breakdown object ──────────────────────────────────────────────────
+
+  // ── Price breakdown ───────────────────────────────────────────────────────────
   const priceBreakdown = {
-    baseFare:    carBasePrice,
-    gst:         gstAmount,
-    discount:    discountAmount,
-    totalAmount: expectedTotal,
+    baseFare:     carBasePrice,
+    gst:          gstAmount,
+    discount:     discountAmount,
+    couponCode:   couponCode || null,
+    totalAmount:  expectedTotal,
+    pickupAddress: pickupAddress.trim(),
     ...(selectedMeal?.price && {
       meal: { type: selectedMeal.type, price: parseFloat(selectedMeal.price) }
     }),
   };
- 
-  // ── Transaction ─────────────────────────────────────────────────────────────
+
+  // ── Transaction ───────────────────────────────────────────────────────────────
   const t = await sequelize.transaction();
   let booking;
- 
+
   try {
     const bookingId = await generateNextBookingId();
- 
+
     booking = await Booking.create(
       {
         bookingId,
         userId,
         tripId,
-        pickupPointId,
-        dropPointId,
+        pickupPointId: null,   // not used for personalize
+        dropPointId:   null,   // not used for personalize
         bookingType:   'personalize',
         seats:         allSeatNumbers,
         seatCount:     allSeatNumbers.length,
         journeyDate:   new Date(journeyDate),
- 
-        // NEW fields stored in booking
+
         journeyTime,
         passengerCount: paxCount,
         customerName:   fullName.trim(),
         flightTrainNumber: flightTrainNumber || null,
-        specialRequests:   specialRequests   || null,
- 
+        // Store pickup address in specialRequests so it's visible everywhere
+        specialRequests: pickupAddress.trim() + (specialRequests ? ` | ${specialRequests}` : ''),
+
         paymentMode,
         ...amounts,
         bookingStatus: 'confirmed',
         selectedMeal:  selectedMeal || null,
-        passengers:    null,          // personalize doesn't need per-seat passengers
+        passengers:    null,
         priceBreakdown,
       },
       { transaction: t }
     );
- 
-    // Mark trip as fully booked for this date
+
     await Trip.update(
       { isFullyBooked: true },
       { where: { id: tripId }, transaction: t }
     );
- 
-    // Create BookedSeat records for all seats
+
     if (allSeats.length > 0) {
       await BookedSeat.bulkCreate(
         allSeats.map(seat => ({
@@ -554,8 +614,7 @@ initiatePersonalizeBooking: async (bookingData) => {
         { transaction: t }
       );
     }
- 
-    // Create payment order
+
     let paymentSessionId = null;
     if (amounts.paidAmount > 0) {
       const paymentResult = await paymentService.createOrder({
@@ -566,7 +625,7 @@ initiatePersonalizeBooking: async (bookingData) => {
         customerId:   userId,
         bookingId:    booking.id,
       });
- 
+
       await booking.update(
         {
           paymentOrderId:   paymentResult.order_id,
@@ -575,30 +634,26 @@ initiatePersonalizeBooking: async (bookingData) => {
         },
         { transaction: t }
       );
- 
+
       paymentSessionId = paymentResult.payment_session_id;
     }
- 
+
     await t.commit();
- 
+
     return {
       ...formatBookingResponse(booking, paymentSessionId),
-      // Extra fields for booking confirmation page
       customerName:      booking.customerName,
       journeyTime:       booking.journeyTime,
       passengerCount:    booking.passengerCount,
+      pickupAddress:     pickupAddress.trim(),
       flightTrainNumber: booking.flightTrainNumber,
       specialRequests:   booking.specialRequests,
       priceBreakdown:    booking.priceBreakdown,
     };
- 
+
   } catch (error) {
     await t.rollback();
-    // Safety: unblock trip if booking fails
-    await Trip.update(
-      { isFullyBooked: false },
-      { where: { id: tripId } }
-    ).catch(() => {});
+    await Trip.update({ isFullyBooked: false }, { where: { id: tripId } }).catch(() => {});
     throw error;
   }
 },

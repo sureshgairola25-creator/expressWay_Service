@@ -84,9 +84,9 @@ const validateCommon = (body) => {
     throw new BadRequest('paidAmount must be a positive number');
   }
 
-  if (paymentMode === 'full' && parseFloat(paidAmount) < parseFloat(totalAmount)) {
-    throw new BadRequest('For full payment, paidAmount must equal totalAmount');
-  }
+  // if (paymentMode === 'full' && parseFloat(paidAmount) < parseFloat(totalAmount)) {
+  //   throw new BadRequest('For full payment, paidAmount must equal totalAmount');
+  // }
 
   if (paymentMode === 'partial' && parseFloat(paidAmount) >= parseFloat(totalAmount)) {
     throw new BadRequest('For partial payment, paidAmount must be less than totalAmount');
@@ -138,7 +138,7 @@ const validatePersonalizeBooking = (body) => {
  
   const {
     fullName, passengerCount,
-    pickupLocation, dropLocation,
+    pickupAddress, dropAddress,
     journeyDate, journeyTime,
   } = body;
  
@@ -146,12 +146,12 @@ const validatePersonalizeBooking = (body) => {
     throw new BadRequest('fullName is required');
   }
  
-  if (!pickupLocation || pickupLocation.trim() === '') {
-    throw new BadRequest('pickupLocation is required');
+  if (!pickupAddress || !pickupAddress.trim()) {
+    throw new BadRequest('pickupAddress is required');
   }
  
-  if (!dropLocation || dropLocation.trim() === '') {
-    throw new BadRequest('dropLocation is required');
+  if (!dropAddress || !dropAddress.trim()) {
+    throw new BadRequest('dropAddress is required');
   }
   if(!journeyDate || journeyDate.trim() === '') {
     throw new BadRequest('journeyDate is required');
