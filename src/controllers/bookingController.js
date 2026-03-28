@@ -83,10 +83,14 @@ const bookingController = {
 
   // ── PATCH /bookings/:id/cancel ────────────────────────────────────────────
   cancelBooking: asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const result = await bookingService.cancelBooking(parseInt(id));
-    res.status(200).json({ success: true, message: result.message });
-  }),
+  const { id } = req.params;          // booking DB id (not bookingId string)
+  const userId = req.body.userId || req.user?.id;
+ 
+  const result = await bookingService.cancelBooking(parseInt(id), parseInt(userId));
+ 
+  res.status(200).json({ success: true, data: result });
+}),
+
 
   // ── GET /admin/bookings ───────────────────────────────────────────────────
   getBookingList: asyncHandler(async (req, res) => {

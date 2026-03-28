@@ -845,27 +845,96 @@ initiatePersonalizeBooking: async (bookingData) => {
   },
 
   // ── Cancel booking ─────────────────────────────────────────────────────────
-  cancelBooking: async (bookingId) => {
-    const booking = await Booking.findByPk(bookingId);
-    if (!booking)                              throw new NotFound('Booking not found');
-    if (booking.bookingStatus === 'cancelled') throw new BadRequest('Booking is already cancelled');
-
-    const t = await sequelize.transaction();
-    try {
-      await booking.update({ bookingStatus: 'cancelled' }, { transaction: t });
-      await BookedSeat.update({ isCancelled: true }, { where: { bookingId }, transaction: t });
-
-      if (booking.bookingType === 'personalize') {
-        await Trip.update({ isFullyBooked: false }, { where: { id: booking.tripId }, transaction: t });
+cancelBooking: async (bookingId, userId) => {
+  const booking = await Booking.findByPk(bookingId, {
+    include: [{ model: Trip, as: 'trip' }],
+  });
+ 
+  if (!booking)                        throw new NotFound('Booking not found');
+  if (booking.userId !== userId)        throw new BadRequest('You can only cancel your own bookings');
+  if (booking.bookingStatus === 'cancelled') throw new BadRequest('Booking is already cancelled');
+  if (!['confirmed', 'initiated'].includes(booking.bookingStatus)) {
+    throw new BadRequest(`Cannot cancel a booking with status: ${booking.bookingStatus}`);
+  }
+ 
+  const t = await sequelize.transaction();
+ 
+  try {
+    // ── 1. Mark booking cancelled ───────────────────────────────────────────
+    await booking.update({ bookingStatus: 'cancelled' }, { transaction: t });
+ 
+    // ── 2. Cancel all BookedSeat records ────────────────────────────────────
+    await BookedSeat.update(
+      { isCancelled: true },
+      { where: { bookingId: booking.id }, transaction: t }
+    );
+ 
+    // ── 3. Release resources per booking type ───────────────────────────────
+ 
+    if (booking.bookingType === 'sharing') {
+      // Release individual seats — reset isBooked flag so search shows them available
+      const seatNumbers = Array.isArray(booking.seats)
+        ? booking.seats
+        : JSON.parse(booking.seats || '[]');
+ 
+      if (seatNumbers.length > 0) {
+        await Seat.update(
+          { isBooked: false },
+          { where: { tripId: booking.tripId, seatNumber: seatNumbers }, transaction: t }
+        );
       }
-
-      await t.commit();
-      return { message: 'Booking cancelled successfully' };
-    } catch (error) {
-      await t.rollback();
-      throw error;
+ 
+    } else if (booking.bookingType === 'cabin') {
+      // Cabin slot is freed by cancelled BookedSeat records
+      // initiateCabinBooking checks Booking table (status != cancelled) so no extra step needed
+      // But reset any Seat.isBooked flags if used
+      const seatNumbers = Array.isArray(booking.seats)
+        ? booking.seats
+        : JSON.parse(booking.seats || '[]');
+ 
+      if (seatNumbers.length > 0) {
+        await Seat.update(
+          { isBooked: false },
+          { where: { tripId: booking.tripId, seatNumber: seatNumbers }, transaction: t }
+        );
+      }
+ 
+    } else if (booking.bookingType === 'personalize') {
+      // Personalize marks Trip.isFullyBooked = true on booking
+      // Only unblock if no OTHER active personalize booking exists for same trip+date
+      const otherActive = await Booking.findOne({
+        where: {
+          tripId:        booking.tripId,
+          journeyDate:   booking.journeyDate,
+          bookingType:   'personalize',
+          bookingStatus: { [Op.not]: 'cancelled' },
+          id:            { [Op.not]: booking.id },
+        },
+        transaction: t,
+      });
+ 
+      if (!otherActive) {
+        await Trip.update(
+          { isFullyBooked: false },
+          { where: { id: booking.tripId }, transaction: t }
+        );
+      }
     }
-  },
+ 
+    await t.commit();
+ 
+    return {
+      success:     true,
+      message:     'Booking cancelled successfully',
+      bookingId:   booking.bookingId,
+      bookingType: booking.bookingType,
+    };
+ 
+  } catch (error) {
+    await t.rollback();
+    throw error;
+  }
+},
 
   // ── Admin: update payment status ───────────────────────────────────────────
   updatePaymentStatus: async (bookingId, { paidAmount, paymentStatus }) => {
