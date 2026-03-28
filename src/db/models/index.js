@@ -11,6 +11,9 @@ const Booking = require('./Booking');
 const BookedSeat = require('./BookedSeat');
 const SeatPricing = require('./SeatPricing');
 const User = require('./User');
+// ✅ FIX — initialize it the same way as Coupon and Review
+const NotificationModel = require('./notification');
+const Notification = NotificationModel(sequelize, require('sequelize').DataTypes);
 const PasswordResetToken = require('./PasswordResetToken');
 const CouponModel = require('./coupon');
 const Review = require('./Review');
@@ -192,6 +195,11 @@ Booking.belongsTo(User, {
   as: 'user' 
 });
 
+// // In index.js after all models are loaded:
+Notification.belongsTo(Booking, { foreignKey: 'bookingId', as: 'booking' });
+Notification.belongsTo(User,    { foreignKey: 'userId',    as: 'user'    });
+Booking.hasMany(Notification,   { foreignKey: 'bookingId', as: 'notifications' });
+
 module.exports = {
   sequelize,
   StartLocation,
@@ -209,5 +217,6 @@ module.exports = {
   Coupon,
   PasswordResetToken,
   Review: ReviewModel,
-  BackgroundImage
+  BackgroundImage,
+  Notification
 };

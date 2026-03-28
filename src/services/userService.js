@@ -372,6 +372,157 @@ getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
     throw error;
   }
 },
+// ─────────────────────────────────────────────────────────────────────────────
+// ADD THESE THREE FUNCTIONS to your existing userService object
+// Place them before the closing }; of userService
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── 1. Forgot Password — sends OTP to email or mobile ─────────────────────────
+ forgotPassword: async (identifier) => {
+  if (!identifier || !identifier.trim()) {
+    throw new BadRequest('Email or mobile number is required');
+  }
+
+  const isEmail  = identifier.includes('@');
+  // const isMobile = !isEmail && /^\+?\d{10,13}$/.test(identifier.replace(/\s/g, ''));
+  const normalizedIdentifier = normalizeIdentifier(identifier);
+
+
+  if (!isEmail && !normalizedIdentifier) {
+    throw new BadRequest('Please provide a valid email or 10-digit mobile number');
+  }
+
+  // Find user
+  const user = await User.findOne({
+    where: isEmail
+      ? { email: identifier.trim() }
+      : { phoneNo: normalizedIdentifier.trim() },
+  });
+
+  // ✅ 404 if not found
+  if (!user) {
+    throw new NotFound('No account found with this email or mobile number. Please register first.');
+  }
+
+  if (!user.isVerified) {
+    throw new BadRequest('Account not verified. Please complete your registration first.');
+  }
+
+  // Generate 6-digit OTP
+  const otp        = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiration = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  // Store OTP on user record (reuse token/tokenExpiration columns)
+  user.token           = otp;
+  user.tokenExpiration = expiration;
+  await user.save();
+
+  // Send OTP
+  if (isEmail) {
+    await sendEmail(
+      identifier.trim(),
+      'ExpressWay Cab — Password Reset OTP',
+      `Your password reset OTP is: ${otp}\n\nThis OTP is valid for 10 minutes. Do not share it with anyone.`
+    );
+  } else {
+    await sendSMS(identifier.trim(), { otp });
+  }
+
+  return {
+    success: true,
+    message: `OTP sent to your ${isEmail ? 'email' : 'mobile number'} successfully.`,
+  };
+},
+
+// ── 2. Verify Reset OTP — validates OTP without resetting password ─────────────
+verifyResetOtp: async (identifier, otp) => {
+  if (!identifier || !otp) {
+    throw new BadRequest('Identifier and OTP are required');
+  }
+
+  const isEmail = identifier.includes('@');
+  const normalizedIdentifier = normalizeIdentifier(identifier);
+
+
+  const user = await User.findOne({
+    where: isEmail
+      ? { email: identifier.trim() }
+      : { phoneNo: normalizedIdentifier.trim() },
+  });
+
+  if (!user) {
+    throw new NotFound('No account found with this email or mobile number.');
+  }
+
+  // ✅ 400 for wrong/expired OTP
+  if (!user.token || user.token !== otp.toString()) {
+    throw new BadRequest('Invalid OTP. Please enter the correct OTP.');
+  }
+
+  if (new Date() > user.tokenExpiration) {
+    throw new BadRequest('OTP has expired. Please request a new one.');
+  }
+
+  return {
+    success: true,
+    message: 'OTP verified successfully.',
+  };
+},
+
+// ── 3. Reset Password — verifies OTP again then updates password ──────────────
+ resetPassword:async (identifier, otp, newPassword) => {
+  if (!identifier || !otp || !newPassword) {
+    throw new BadRequest('Identifier, OTP, and new password are required');
+  }
+
+  if (newPassword.length < 6) {
+    throw new BadRequest('Password must be at least 6 characters long');
+  }
+
+  const isEmail = identifier.includes('@');
+  const normalizedIdentifier = normalizeIdentifier(identifier);
+
+
+  const user = await User.findOne({
+    where: isEmail
+      ? { email: identifier.trim() }
+      : { phoneNo: normalizedIdentifier.trim() },
+  });
+
+  if (!user) {
+    throw new NotFound('No account found with this email or mobile number.');
+  }
+
+  // Verify OTP one more time
+  if (!user.token || user.token !== otp.toString()) {
+    throw new BadRequest('Invalid OTP. Session may have expired — please start over.');
+  }
+
+  if (new Date() > user.tokenExpiration) {
+    throw new BadRequest('OTP has expired. Please request a new one.');
+  }
+
+  // Hash and update password
+  const hashedPassword = await bcrypt.hash(newPassword, 12);
+  user.password        = hashedPassword;
+  user.token           = null;      // clear OTP after successful reset
+  user.tokenExpiration = null;
+  await user.save();
+
+  return {
+    success: true,
+    message: 'Password reset successfully. You can now log in with your new password.',
+  };
+}
+};
+const normalizeIdentifier = (identifier) => {
+  const isEmail = identifier.includes('@');
+  if (isEmail) return identifier.trim();
+
+  return identifier.trim()
+    .replace(/\s/g, '')
+    .replace(/^\+91/, '')
+    .replace(/^91/, '');
 };
 
 module.exports = userService;

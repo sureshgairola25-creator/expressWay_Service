@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { 
   forgotPassword, 
-  resetPassword 
+  resetPassword ,
+  verifyResetOtp
 } = require('../controllers/authController');
 const { 
   getGoogleAuthURL, 
@@ -16,6 +17,7 @@ const { protect } = require('../middleware/auth');
 // Password reset routes
 router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
 router.post('/reset-password', resetPasswordLimiter, resetPassword);
+
 
 // Google OAuth routes
 router.get('/google/url', getGoogleAuthURL);

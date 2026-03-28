@@ -70,6 +70,13 @@ const locationController = {
     res.status(200).json({ success: true, data: result });
   }),
 
+    getEndLocationsByStartLocation: asyncHandler(async (req, res) => {
+  const locations = await locationService.getEndLocationsByStartLocation(req.params.id);
+  res.status(200).json({ success: true, data: locations });
+  }),
+
+
+
   deleteStartLocation: asyncHandler(async (req, res) => {
     const { id } = req.params;
     const result = await locationService.deleteStartLocation(id);

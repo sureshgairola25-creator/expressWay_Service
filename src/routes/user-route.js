@@ -60,4 +60,8 @@ router.post('/logout', protect, userController.logout);
 // @access  Private/Admin
 router.get('/users', userController.getUsers);
 
+router.post('/forgot-password',    userController.forgotPassword);
+router.post('/verify-reset-otp',   userController.verifyResetOtp);
+router.post('/reset-password',     userController.resetPassword);
+
 module.exports = router;

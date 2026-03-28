@@ -1,6 +1,6 @@
 const { body, param, query } = require('express-validator');
 const { Op, sequelize } = require('sequelize');
-const Coupon = require('../../db/models/coupon');
+const { Coupon } = require('../../db/models');
 
 // Common validation rules
 const codeValidation = body('code')

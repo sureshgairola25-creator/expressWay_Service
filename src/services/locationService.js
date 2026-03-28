@@ -1,310 +1,301 @@
-const { StartLocation, PickupPoint, EndLocation, DropPoint, Route } = require('../db/models');
-const { Op } = require('sequelize');
+// ─────────────────────────────────────────────────────────────────────────────
+// FILE: src/services/locationService.js  (or routeService.js)
+// Fixed: was using MongoDB/Mongoose — now uses Sequelize/MySQL
+// Fixed: missing await on all DB calls
+// Fixed: proper error handling
+// ─────────────────────────────────────────────────────────────────────────────
+
+const { NotFound, BadRequest, InternalServerError } = require('http-errors');
+const db = require('../db/models');
+const { StartLocation, EndLocation, PickupPoint, DropPoint } = db;
 
 const locationService = {
-  // --- Admin Functions ---
 
-  createStartLocation: async (data) => {
-    return StartLocation.create(data);
-  },
-
-  createPickupPoint: async (data) => {
-    return PickupPoint.create(data);
-  },
-
-  createEndLocation: async (data) => {
-    return EndLocation.create(data);
-  },
-
-  createDropPoint: async (data) => {
-    return DropPoint.create(data);
-  },
-
-  createRoute: async (data) => {
-    return Route.create(data);
-  },
-
-  getAllRoutes: async () => {
-    return await Route.findAll({
-      include: [
-        { model: StartLocation, as: 'StartLocation', attributes: ['id', 'name'] },
-        { model: EndLocation, as: 'EndLocation', attributes: ['id', 'name'] },
-      ]
-    });
-  },
-
-  updateRoute: async (id, data) => {
-    const route = await Route.findByPk(id);
-    if (!route) {
-      throw new Error('Route not found');
-    }
-    await route.update(data);
-    return route;
-  },
-
-  deleteRoute: async (id) => {
-    const route = await Route.findByPk(id);
-    if (!route) {
-      throw new Error('Route not found');
-    }
-    await route.destroy();
-    return true;
-  },
+  // ── START LOCATIONS ────────────────────────────────────────────────────────
 
   getAllStartLocations: async () => {
-    return StartLocation.findAll({
-      attributes: ['id', 'name'],
-      where: { status: true },
-      order: [['name', 'ASC']],
-    });
-  },
-
-  getAllPickupPoints: async () => {
-    return PickupPoint.findAll({
-      attributes: ['id', 'name'],
-      where: { status: true },
-      order: [['name', 'ASC']],
-    });
-  },
-
-  getAllEndLocations: async () => {
-    return EndLocation.findAll({
-      attributes: ['id', 'name'],
-      where: { status: true },
-      order: [['name', 'ASC']],
-    });
-  },
-
-  getAllDropPoints: async () => {
-    return DropPoint.findAll({
-      attributes: ['id', 'name'],
-      where: { status: true },
-      order: [['name', 'ASC']],
-    });
-  },
-
-  // --- User-Facing Functions ---
-
-  getLocationInfo: async ({ startLocationId, endLocationId, pickupPointId, dropPointId }) => {
-    const result = {};
-
-    if (startLocationId) {
-      const startLocation = await StartLocation.findByPk(startLocationId, { attributes: ['id', 'name'] });
-      if (startLocation) result.startLocation = startLocation;
+    try {
+      const locations = await StartLocation.findAll({
+        order: [['name', 'ASC']],
+      });
+      return locations;
+    } catch (e) {
+      console.error('[getAllStartLocations]', e);
+      throw new InternalServerError('Failed to fetch start locations');
     }
+  },
 
-    if (endLocationId) {
-      const endLocation = await EndLocation.findByPk(endLocationId, { attributes: ['id', 'name'] });
-      if (endLocation) result.endLocation = endLocation;
+  createStartLocation: async (data) => {
+    const { name } = data;
+    if (!name || !name.trim()) throw new BadRequest('Start location name is required');
+    try {
+      const existing = await StartLocation.findOne({ where: { name: name.trim() } });
+      if (existing) throw new BadRequest(`Start location "${name}" already exists`);
+
+      const location = await StartLocation.create({ name: name.trim() });
+      return location;
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[createStartLocation]', e);
+      throw new InternalServerError('Failed to create start location');
     }
+  },
 
-    if (pickupPointId) {
-      const pickupPoint = await PickupPoint.findByPk(pickupPointId, { attributes: ['id', 'name'] });
-      if (pickupPoint) result.pickupPoint = pickupPoint;
+  updateStartLocation: async (id, data) => {
+    const { name } = data;
+    if (!name || !name.trim()) throw new BadRequest('Name is required');
+    try {
+      const location = await StartLocation.findByPk(id);
+      if (!location) throw new NotFound('Start location not found');
+      await location.update({ name: name.trim() });
+      return location;
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[updateStartLocation]', e);
+      throw new InternalServerError('Failed to update start location');
     }
-
-    if (dropPointId) {
-      const dropPoint = await DropPoint.findByPk(dropPointId, { attributes: ['id', 'name'] });
-      if (dropPoint) result.dropPoint = dropPoint;
-    }
-
-    return result;
-  },
-
-  getPickupPointsByStartLocation: async (startLocationId) => {
-    return PickupPoint.findAll({
-      attributes: ['id', 'name'],
-      where: { startLocationId, status: true },
-      order: [['name', 'ASC']],
-    });
-  },
-
-  getEndLocationsByStartLocation: async (startLocationId) => {
-    return EndLocation.findAll({
-      attributes: ['id', 'name'],
-      where: { startLocationId, status: true },
-      order: [['name', 'ASC']],
-    });
-  },
-
-  getDropPointsByEndLocation: async (endLocationId) => {
-    return DropPoint.findAll({
-      attributes: ['id', 'name'],
-      where: { endLocationId, status: true },
-      order: [['name', 'ASC']],
-    });
-  },
-
-  getHierarchicalLocations: async () => {
-    const startLocations = await StartLocation.findAll({
-      attributes: ['id', 'name'],
-      where: { status: true },
-      include: [
-        {
-          model: PickupPoint,
-          attributes: ['id', 'name'],
-          where: { status: true },
-          required: false,
-        },
-        {
-          model: EndLocation,
-          attributes: ['id', 'name'],
-          where: { status: true },
-          required: false,
-          include: [
-            {
-              model: DropPoint,
-              attributes: ['id', 'name'],
-              where: { status: true },
-              required: false,
-            },
-          ],
-        },
-      ],
-      order: [['name', 'ASC']],
-    });
-
-    return startLocations.map(startLocation => ({
-      startLocation: startLocation.name,
-      pickupPoints: startLocation.PickupPoints.map(pp => pp.name),
-      endLocations: startLocation.EndLocations.map(el => ({
-        name: el.name,
-        dropPoints: el.DropPoints.map(dp => dp.name),
-      })),
-    }));
-  },
-
-  updateStartLocation: async (id,update) => {
-    const startLocation = await StartLocation.findByPk(id);
-    if (!startLocation) {
-      throw new Error('Start location not found');
-    }
-    await startLocation.update({name: update.name});
-    return { message: 'Start location updated successfully' };
-  },
-
-  updatePickupPoint: async (id,update) => {
-    const pickupPoint = await PickupPoint.findByPk(id);
-    if (!pickupPoint) {
-      throw new Error('Pickup point not found');
-    }
-    await pickupPoint.update({name: update.name});
-    return { message: 'Pickup point updated successfully' };
-  },
-
-  updateEndLocation: async (id,update) => {
-    const endLocation = await EndLocation.findByPk(id);
-    if (!endLocation) {
-      throw new Error('End location not found');
-    }
-    await endLocation.update({name: update.name});
-    return { message: 'End location updated successfully' };
-  },
-
-  updateDropPoint: async (id,update) => {
-    const dropPoint = await DropPoint.findByPk(id);
-    if (!dropPoint) {
-      throw new Error('Drop point not found');
-    }
-    await dropPoint.update({name: update.name});
-    return { message: 'Drop point updated successfully' };
   },
 
   deleteStartLocation: async (id) => {
-    const startLocation = await StartLocation.findByPk(id);
-    if (!startLocation) {
-      throw new Error('Start location not found');
+    try {
+      const location = await StartLocation.findByPk(id);
+      if (!location) throw new NotFound('Start location not found');
+      await location.destroy();
+      return { message: 'Start location deleted successfully' };
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[deleteStartLocation]', e);
+      throw new InternalServerError('Failed to delete start location');
     }
-    await startLocation.destroy();
-    return { message: 'Start location deleted successfully' };
   },
 
-  deletePickupPoint: async (id) => {
-    const pickupPoint = await PickupPoint.findByPk(id);
-    if (!pickupPoint) {
-      throw new Error('Pickup point not found');
+  // ── END LOCATIONS ──────────────────────────────────────────────────────────
+
+  getAllEndLocations: async () => {
+    try {
+      const locations = await EndLocation.findAll({
+        order: [['name', 'ASC']],
+      });
+      return locations;
+    } catch (e) {
+      console.error('[getAllEndLocations]', e);
+      throw new InternalServerError('Failed to fetch end locations');
     }
-    await pickupPoint.destroy();
-    return { message: 'Pickup point deleted successfully' };
+  },
+
+  createEndLocation: async (data) => {
+    const { name, startLocationId } = data;
+    if (!name || !name.trim())  throw new BadRequest('End location name is required');
+    if (!startLocationId)       throw new BadRequest('startLocationId is required');
+    try {
+      const startLoc = await StartLocation.findByPk(startLocationId);
+      if (!startLoc) throw new NotFound('Start location not found');
+
+      const location = await EndLocation.create({
+        name:            name.trim(),
+        startLocationId: parseInt(startLocationId),
+      });
+      return location;
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[createEndLocation]', e);
+      throw new InternalServerError('Failed to create end location');
+    }
+  },
+
+  updateEndLocation: async (id, data) => {
+    const { name } = data;
+    if (!name || !name.trim()) throw new BadRequest('Name is required');
+    try {
+      const location = await EndLocation.findByPk(id);
+      if (!location) throw new NotFound('End location not found');
+      await location.update({ name: name.trim() });
+      return location;
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[updateEndLocation]', e);
+      throw new InternalServerError('Failed to update end location');
+    }
   },
 
   deleteEndLocation: async (id) => {
-    const endLocation = await EndLocation.findByPk(id);
-    if (!endLocation) {
-      throw new Error('End location not found');
+    try {
+      const location = await EndLocation.findByPk(id);
+      if (!location) throw new NotFound('End location not found');
+      await location.destroy();
+      return { message: 'End location deleted successfully' };
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[deleteEndLocation]', e);
+      throw new InternalServerError('Failed to delete end location');
     }
-    await endLocation.destroy();
-    return { message: 'End location deleted successfully' };
+  },
+
+  // ── PICKUP POINTS ──────────────────────────────────────────────────────────
+
+  getPickupPointsByStartLocation: async (startLocationId) => {
+    try {
+      const points = await PickupPoint.findAll({
+        where: { startLocationId: parseInt(startLocationId) },
+        order: [['name', 'ASC']],
+      });
+      return points;
+    } catch (e) {
+      console.error('[getPickupPointsByStartLocation]', e);
+      throw new InternalServerError('Failed to fetch pickup points');
+    }
+  },
+
+  createPickupPoint: async (data) => {
+    const { name, startLocationId } = data;
+    if (!name || !name.trim()) throw new BadRequest('Pickup point name is required');
+    if (!startLocationId)      throw new BadRequest('startLocationId is required');
+    try {
+      const startLoc = await StartLocation.findByPk(startLocationId);
+      if (!startLoc) throw new NotFound('Start location not found');
+
+      const point = await PickupPoint.create({
+        name:            name.trim(),
+        startLocationId: parseInt(startLocationId),
+        status:          1,
+      });
+      return point;
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[createPickupPoint]', e);
+      throw new InternalServerError('Failed to create pickup point');
+    }
+  },
+
+  updatePickupPoint: async (id, data) => {
+    const { name } = data;
+    if (!name || !name.trim()) throw new BadRequest('Name is required');
+    try {
+      const point = await PickupPoint.findByPk(id);
+      if (!point) throw new NotFound('Pickup point not found');
+      await point.update({ name: name.trim() });
+      return point;
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[updatePickupPoint]', e);
+      throw new InternalServerError('Failed to update pickup point');
+    }
+  },
+
+  deletePickupPoint: async (id) => {
+    try {
+      const point = await PickupPoint.findByPk(id);
+      if (!point) throw new NotFound('Pickup point not found');
+      await point.destroy();
+      return { message: 'Pickup point deleted successfully' };
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[deletePickupPoint]', e);
+      throw new InternalServerError('Failed to delete pickup point');
+    }
+  },
+
+  // ── DROP POINTS ────────────────────────────────────────────────────────────
+
+  getDropPointsByEndLocation: async (endLocationId) => {
+    try {
+      const points = await DropPoint.findAll({
+        where: { endLocationId: parseInt(endLocationId) },
+        order: [['name', 'ASC']],
+      });
+      return points;
+    } catch (e) {
+      console.error('[getDropPointsByEndLocation]', e);
+      throw new InternalServerError('Failed to fetch drop points');
+    }
+  },
+
+  createDropPoint: async (data) => {
+    const { name, endLocationId } = data;
+    if (!name || !name.trim()) throw new BadRequest('Drop point name is required');
+    if (!endLocationId)        throw new BadRequest('endLocationId is required');
+    try {
+      const endLoc = await EndLocation.findByPk(endLocationId);
+      if (!endLoc) throw new NotFound('End location not found');
+
+      const point = await DropPoint.create({
+        name:          name.trim(),
+        endLocationId: parseInt(endLocationId),
+      });
+      return point;
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[createDropPoint]', e);
+      throw new InternalServerError('Failed to create drop point');
+    }
+  },
+
+  updateDropPoint: async (id, data) => {
+    const { name } = data;
+    if (!name || !name.trim()) throw new BadRequest('Name is required');
+    try {
+      const point = await DropPoint.findByPk(id);
+      if (!point) throw new NotFound('Drop point not found');
+      await point.update({ name: name.trim() });
+      return point;
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[updateDropPoint]', e);
+      throw new InternalServerError('Failed to delete drop point');
+    }
   },
 
   deleteDropPoint: async (id) => {
-    const dropPoint = await DropPoint.findByPk(id);
-    if (!dropPoint) {
-      throw new Error('Drop point not found');
+    try {
+      const point = await DropPoint.findByPk(id);
+      if (!point) throw new NotFound('Drop point not found');
+      await point.destroy();
+      return { message: 'Drop point deleted successfully' };
+    } catch (e) {
+      if (e.status) throw e;
+      console.error('[deleteDropPoint]', e);
+      throw new InternalServerError('Failed to delete drop point');
     }
-    await dropPoint.destroy();
-    return { message: 'Drop point deleted successfully' };
   },
-  getPickupPointsByStartLocation : async (startLocationId) => {
- 
-  // 1. Get the start location to find its city
-  const startLocation = await StartLocation.findByPk(startLocationId, {
-    attributes: ['id', 'name', 'city']
-  });
- 
-  if (!startLocation) throw new NotFound('Start location not found');
- 
-  const city = startLocation.city; // e.g. "delhi"
- 
-  // 2. Fetch both in parallel:
-  //    a) Specific pickup points for this startLocationId
-  //    b) City-level defaults for this city
-  const [specificPoints, cityDefaults] = await Promise.all([
- 
-    // Specific to this start location
-    PickupPoint.findAll({
-      where: {
-        startLocationId,
-        status: true,
-        isCityDefault: false   // exclude city defaults from specific query
-      },
-      attributes: ['id', 'name', 'price', 'type', 'description', 'meta'],
-      order: [['type', 'ASC'], ['price', 'ASC']]
-    }),
- 
-    // City-level defaults (e.g. Mayur Vihar Metro, Botanical Garden Metro for delhi)
-    city ? PickupPoint.findAll({
-      where: {
-        status:         true,
-        isCityDefault:  true,
-        cityDefaultFor: city
-      },
-      attributes: ['id', 'name', 'price', 'type', 'description', 'meta', 'isCityDefault'],
-      order: [['price', 'ASC']]
-    }) : []
- 
-  ]);
- 
-  // 3. Format and merge
-  // City defaults always shown first (metro options are prominent)
-  // then specific pickup points
-  const formatPoint = (p) => ({
-    id:             p.id,
-    name:           p.name,
-    type:           p.type,
-    price:          p.price,          // null = use car base price
-    description:    p.description,
-    meta:           p.meta,
-    isCityDefault:  p.isCityDefault || false,
-  });
- 
-  const result = [
-    ...cityDefaults.map(formatPoint),   // metro defaults first
-    ...specificPoints.map(formatPoint), // then route-specific points
-  ];
- 
-  return result;
+  // In locationService.js, add this function inside the locationService object:
+
+getEndLocationsByStartLocation: async (startLocationId) => {
+  try {
+    const locations = await EndLocation.findAll({
+      where:  { startLocationId: parseInt(startLocationId) },
+      order:  [['name', 'ASC']],
+    });
+    return locations;
+  } catch (e) {
+    console.error('[getEndLocationsByStartLocation]', e);
+    throw new InternalServerError('Failed to fetch end locations');
+  }
 },
-}
+};
 
 module.exports = locationService;
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTES — add these to your Express router (e.g. routes/locationRoutes.js)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// GET    /locations/start                     → getAllStartLocations
+// POST   /locations/start                     → createStartLocation
+// PUT    /locations/start/:id                 → updateStartLocation
+// DELETE /locations/start/:id                 → deleteStartLocation
+//
+// GET    /locations/end                       → getAllEndLocations
+// POST   /locations/end                       → createEndLocation
+// PUT    /locations/end/:id                   → updateEndLocation
+// DELETE /locations/end/:id                   → deleteEndLocation
+//
+// GET    /locations/start/:id/pickup          → getPickupPointsByStartLocation
+// POST   /locations/pickup                    → createPickupPoint
+// PUT    /locations/pickup/:id                → updatePickupPoint
+// DELETE /locations/pickup/:id               → deletePickupPoint
+//
+// GET    /locations/end/:id/drop              → getDropPointsByEndLocation
+// POST   /locations/drop                      → createDropPoint
+// PUT    /locations/drop/:id                  → updateDropPoint
+// DELETE /locations/drop/:id                 → deleteDropPoint

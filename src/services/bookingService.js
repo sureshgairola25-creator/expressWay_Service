@@ -248,7 +248,7 @@ const seatTotal = effectivePricePerSeat * seatRecords.length;
         journeyDate:    new Date(journeyDate),
         paymentMode,
         ...amounts,
-        bookingStatus:  'confirmed',
+        bookingStatus:  'initiated',
         couponCode,
         discountAmount: parseFloat(discountAmount) || 0,
         priceBreakdown: breakdown,
@@ -285,7 +285,6 @@ const seatTotal = effectivePricePerSeat * seatRecords.length;
       }
 
       await t.commit();
-      return formatBookingResponse(booking, paymentSessionId);
 
     } catch (error) {
       await t.rollback();
@@ -381,7 +380,7 @@ const seatTotal = effectivePricePerSeat * seatRecords.length;
         journeyDate:   new Date(journeyDate),
         paymentMode,
         ...amounts,
-        bookingStatus: 'confirmed',
+        bookingStatus: 'initiated',
         selectedMeal,
         passengers:    sanitizedPassengers,   // ← stored as JSON
         priceBreakdown: {
@@ -589,7 +588,7 @@ initiatePersonalizeBooking: async (bookingData) => {
 
         paymentMode,
         ...amounts,
-        bookingStatus: 'confirmed',
+        bookingStatus: 'initiated',
         selectedMeal:  selectedMeal || null,
         passengers:    null,
         priceBreakdown,

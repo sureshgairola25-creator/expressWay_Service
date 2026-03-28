@@ -70,7 +70,7 @@ router.put('/pickup-points/:id', locationController.updatePickupPoint);
 // Update a drop point
 router.put('/drop-points/:id', locationController.updateDropPoint);
 
-
+router.get('/start/:id/end',locationController.getEndLocationsByStartLocation);
 // Delete a start location
 router.delete('/start/:id', locationController.deleteStartLocation);
 

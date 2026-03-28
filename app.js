@@ -10,6 +10,7 @@ const hpp = require('hpp');
 const cors = require('cors');
 const csrf = require('csurf');
 
+
 // Load environment variables
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
@@ -183,5 +184,6 @@ const server = app.listen(port, async () => {
     process.exit(1);
   }
 });
-
+// At the bottom of app.js, after DB connection:
+require('./src/jobs/reminderJob');
 module.exports = { app, server };

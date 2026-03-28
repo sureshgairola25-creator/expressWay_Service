@@ -94,7 +94,40 @@ const userController = {
       count: users.length,
       data: users
     });
-  })
+  }),
+
+  // POST /api/users/forgot-password
+// Body: { identifier: "email@example.com" | "+911234567890" }
+forgotPassword: asyncHandler(async (req, res) => {
+  const { identifier } = req.body;
+  if (!identifier) {
+    return res.status(400).json({ success: false, message: 'Email or mobile number is required' });
+  }
+  const result = await userService.forgotPassword(identifier);
+  res.status(200).json(result);
+}),
+ 
+// POST /api/users/verify-reset-otp
+// Body: { identifier, otp }
+verifyResetOtp: asyncHandler(async (req, res) => {
+  const { identifier, otp } = req.body;
+  if (!identifier || !otp) {
+    return res.status(400).json({ success: false, message: 'Identifier and OTP are required' });
+  }
+  const result = await userService.verifyResetOtp(identifier, otp);
+  res.status(200).json(result);
+}),
+ 
+// POST /api/users/reset-password
+// Body: { identifier, otp, newPassword }
+resetPassword: asyncHandler(async (req, res) => {
+  const { identifier, otp, newPassword } = req.body;
+  if (!identifier || !otp || !newPassword) {
+    return res.status(400).json({ success: false, message: 'All fields are required' });
+  }
+  const result = await userService.resetPassword(identifier, otp, newPassword);
+  res.status(200).json(result);
+}),
 };
 
 module.exports = userController;
