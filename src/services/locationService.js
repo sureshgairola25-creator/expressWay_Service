@@ -131,6 +131,34 @@ const locationService = {
     }
   },
 
+  // locationService.js mein add karo — existing functions ke saath
+
+getLocationInfo: async ({ startLocation, endLocation, pickupPoint, dropPoint }) => {
+  try {
+    const [start, end, pickup, drop] = await Promise.all([
+      StartLocation.findByPk(startLocation, { attributes: ['id', 'name'] }),
+      EndLocation.findByPk(endLocation,     { attributes: ['id', 'name'] }),
+      PickupPoint.findByPk(pickupPoint,     { attributes: ['id', 'name'] }),
+      DropPoint.findByPk(dropPoint,         { attributes: ['id', 'name'] }),
+    ]);
+
+    if (!start || !end || !pickup || !drop) {
+      throw new NotFound('One or more locations not found');
+    }
+
+    return {
+      startLocation: { id: start.id, name: start.name },
+      endLocation:   { id: end.id,   name: end.name   },
+      pickupPoint:   { id: pickup.id, name: pickup.name },
+      dropPoint:     { id: drop.id,   name: drop.name  },
+    };
+  } catch (e) {
+    if (e.status) throw e;
+    console.error('[getLocationInfo]', e);
+    throw new InternalServerError('Failed to fetch location info');
+  }
+},
+
   // ── PICKUP POINTS ──────────────────────────────────────────────────────────
 
   getPickupPointsByStartLocation: async (startLocationId) => {

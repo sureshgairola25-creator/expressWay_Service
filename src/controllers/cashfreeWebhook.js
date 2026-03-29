@@ -1,5 +1,5 @@
 const db = require('../db/models');
-const { Trip, StartLocation, EndLocation, PickupPoint, DropPoint } = db;
+const { Booking, User, Trip, StartLocation, EndLocation, PickupPoint, DropPoint } = db;
 const notificationService = require('../services/notificationService');
 
 const CashfreeWebhook = async (req, res) => {

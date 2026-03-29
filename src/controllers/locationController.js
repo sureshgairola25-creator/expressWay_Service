@@ -106,19 +106,26 @@ const locationController = {
     res.status(200).json({ success: true, data: startLocations });
   }),
 
-  getLocationInfo: asyncHandler(async (req, res) => {
-    const { startLocation, endLocation, pickupPoint, dropPoint } = req.query;
-    const locationInfo = await locationService.getLocationInfo({
-      startLocationId: startLocation,
-      endLocationId: endLocation,
-      pickupPointId: pickupPoint,
-      dropPointId: dropPoint,
+// ✅ FIX — same names jo service expect karti hai
+getLocationInfo: asyncHandler(async (req, res) => {
+  const { startLocation, endLocation, pickupPoint, dropPoint } = req.query;
+
+  if (!startLocation || !endLocation || !pickupPoint || !dropPoint) {
+    return res.status(400).json({
+      success: false,
+      message: 'startLocation, endLocation, pickupPoint, dropPoint all required'
     });
-    res.status(200).json({
-      success: true,
-      data: locationInfo,
-    });
-  }),
+  }
+
+  const data = await locationService.getLocationInfo({
+    startLocation,   // ← match karta hai service ke destructure se
+    endLocation,
+    pickupPoint,
+    dropPoint,
+  });
+
+  res.status(200).json({ success: true, data });
+}),
 
   getAllEndLocations: asyncHandler(async (req, res) => {
     const endLocation = await locationService.getAllEndLocations();
