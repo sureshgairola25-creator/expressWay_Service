@@ -200,6 +200,7 @@ Notification.belongsTo(Booking, { foreignKey: 'bookingId', as: 'booking' });
 Notification.belongsTo(User,    { foreignKey: 'userId',    as: 'user'    });
 Booking.hasMany(Notification,   { foreignKey: 'bookingId', as: 'notifications' });
 
+
 module.exports = {
   sequelize,
   StartLocation,

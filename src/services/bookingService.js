@@ -285,7 +285,7 @@ const seatTotal = effectivePricePerSeat * seatRecords.length;
       }
 
       await t.commit();
-
+      return formatBookingResponse(booking, paymentSessionId);
     } catch (error) {
       await t.rollback();
       throw error;
@@ -921,6 +921,26 @@ cancelBooking: async (bookingId, userId) => {
     }
  
     await t.commit();
+    const notifService = require('./notificationService');
+    const user = await User.findByPk(booking.userId);
+    if (user) {
+      const bookingWithDetails = await Booking.findByPk(booking.id, {
+        include: [
+          {
+            model: Trip,
+            as: 'trip',
+            include: [
+              { model: StartLocation, as: 'startLocation' },
+              { model: EndLocation, as: 'endLocation' },
+            ],
+          },
+        ],
+      });
+
+      // bookingWithDetails use karo, booking nahi
+      notifService.notifyBookingCancelled(bookingWithDetails || booking, user)
+        .catch(err => console.error('[Cancel Notification] Failed:', err.message));
+    }
  
     return {
       success:     true,

@@ -300,10 +300,33 @@ getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
       const startTime = new Date(trip.startTime);
 
       // Map booking status
-      let status = 'Confirmed';
-      if (booking.bookingStatus === 'cancelled')  status = 'Cancelled';
-      if (booking.bookingStatus === 'completed')  status = 'Completed';
-      if (booking.bookingStatus === 'initiated' && booking.paymentStatus === 'pending') status = 'Pending';
+      // let status = 'Confirmed';
+      // if (booking.bookingStatus === 'cancelled')  status = 'Cancelled';
+      // if (booking.bookingStatus === 'completed')  status = 'Completed';
+      // if (booking.bookingStatus === 'initiated' && booking.paymentStatus === 'pending') status = 'Pending';
+      // ✅ FIX — har possible bookingStatus explicitly handle karo
+let status;
+switch (booking.bookingStatus) {
+  case 'confirmed':
+    status = 'Confirmed';
+    break;
+  case 'cancelled':
+    status = 'Cancelled';
+    break;
+  case 'completed':
+    status = 'Completed';
+    break;
+  case 'initiated':
+    // Payment ho gaya but webhook abhi nahi aaya → still show as Pending
+    // Payment nahi hua → Pending
+    status = 'Pending';
+    break;
+  case 'failed':
+    status = 'Failed';
+    break;
+  default:
+    status = booking.bookingStatus || 'Unknown';
+}
 
       // journeyDate from DB: "2026-03-27" (DATEONLY)
       const journeyDateStr = booking.journeyDate
@@ -313,7 +336,11 @@ getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
         : todayStr;
 
       // ✅ FIX 2: String comparison — avoids timezone issues entirely
-      const isUpcoming = journeyDateStr >= todayStr && status !== 'Cancelled';
+      // const isUpcoming = journeyDateStr >= todayStr && status !== 'Cancelled';
+      const isUpcoming = journeyDateStr >= todayStr
+  && status !== 'Cancelled'
+  && status !== 'Pending'    // ← payment incomplete
+  && status !== 'Failed';
 
       // Reviews
       const review        = reviewMap.get(booking.id);

@@ -123,11 +123,29 @@ const notifyBookingCancelled = async (booking, user) => {
   });
 
   const data = {
-    customerName:  user.firstName,
+    customerName:  user.firstName || 'Customer',
     bookingId:     booking.bookingId,
-    startLocation: booking.startLocation || '',
-    endLocation:   booking.endLocation   || '',
-    journeyDate:   booking.journeyDate,
+
+    // ❌ CURRENT — yeh fields booking pe directly nahi hote
+    // startLocation: booking.startLocation,
+    // endLocation:   booking.endLocation,
+
+    // ✅ FIX — trip association ke andar se lo
+    startLocation: booking.trip?.startLocation?.name
+                || booking.trip?.dataValues?.startLocation?.name
+                || booking.startLocation   // formatRide se aaya ho to
+                || '',
+
+    endLocation:   booking.trip?.endLocation?.name
+                || booking.trip?.dataValues?.endLocation?.name
+                || booking.endLocation
+                || '',
+
+    journeyDate:   booking.journeyDate
+                ? (typeof booking.journeyDate === 'string'
+                    ? booking.journeyDate.split('T')[0]
+                    : new Date(booking.journeyDate).toISOString().split('T')[0])
+                : '',
   };
 
   return sendWhatsApp(user.phoneNo, 'booking_cancelled', data, notification.id);
@@ -149,18 +167,38 @@ const scheduleReminderNotification = async (booking, user, tripStartTime) => {
 
 // Retry failed messages — called by cron every 15 min
 const retryFailedNotifications = async () => {
+  const { Booking, User } = require('../db/models');
+
   const failed = await Notification.findAll({
     where: { status: 'failed', attemptCount: { [Op.lt]: 3 } },
-    include: [{ model: Booking }],
+    include: [
+      { model: Booking, as: 'booking', required: false },  // ← add as: 'booking'
+    ],
     limit: 20,
   });
 
   for (const notif of failed) {
-    const user = await User.findByPk(notif.userId);
-    if (!user) continue;
+    try {
+      const user = await User.findByPk(notif.userId);
+      if (!user?.phoneNo) continue;
 
-    const data = buildDataFromNotification(notif);
-    await sendWhatsApp(notif.phone, notif.type, data, notif.id);
+      // Build basic data from notification record
+      const data = {
+        customerName:  user.firstName || 'Customer',
+        bookingId:     notif.booking?.bookingId || `#${notif.bookingId}`,
+        bookingType:   notif.booking?.bookingType || 'sharing',
+        startLocation: notif.booking?.trip?.startLocation?.name || '',
+        endLocation:   notif.booking?.trip?.endLocation?.name   || '',
+        pickup:        notif.booking?.pickupPoint?.name         || '',
+        journeyDate:   notif.booking?.journeyDate               || '',
+        seats:         notif.booking?.seats                     || [],
+        totalAmount:   notif.booking?.totalAmount               || '',
+      };
+
+      await sendWhatsApp(notif.phone, notif.type, data, notif.id);
+    } catch (e) {
+      console.error(`[RetryJob] Failed for notification ${notif.id}:`, e.message);
+    }
   }
 };
 
