@@ -51,6 +51,14 @@ cabType: {
   defaultValue: 'all',
   field: 'cab_type',
 },
+// In PickupPoint.js model — add field:
+endLocationId: {
+  type:          DataTypes.INTEGER,
+  allowNull:     true,
+  defaultValue:  null,
+  field:         'end_location_id',
+  references:    { model: 'EndLocations', key: 'id' },
+},
 
 }, {
   tableName: 'PickupPoints',

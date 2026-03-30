@@ -65,7 +65,7 @@ router.put('/start/:id', locationController.updateStartLocation);
 router.put('/end/:id', locationController.updateEndLocation);
 
 // Update a pickup point
-router.put('/pickup-points/:id', locationController.updatePickupPoint);
+router.put('/pickup/:id', locationController.updatePickupPoint);
 
 // Update a drop point
 router.put('/drop-points/:id', locationController.updateDropPoint);
@@ -85,6 +85,14 @@ router.delete('/drop/:id', locationController.deleteDropPoint);
 
 // Get location info by ids
 router.get('/info', locationController.getLocationInfo);
+
+
+// locationRoutes.js — add these 2 new routes
+// Existing routes UNCHANGED
+
+// Personalize specific
+router.get('/personalize/start', locationController.getPersonalizeStartLocations);
+router.get('/personalize/end',   locationController.getPersonalizeEndLocations);
 
 module.exports = router;
 

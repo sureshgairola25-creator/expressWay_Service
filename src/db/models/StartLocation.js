@@ -17,6 +17,11 @@ const StartLocation = sequelize.define('StartLocation', {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
   },
+  locationType: {
+  type:         DataTypes.ENUM('shared', 'personalized', 'all'),
+  defaultValue: 'shared',
+  field:        'location_type',
+},
 }, {
   tableName: 'StartLocations',
   timestamps: true,

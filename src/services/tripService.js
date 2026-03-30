@@ -156,14 +156,30 @@ const tripService = {
           model: Car,
           // Include all new pricing fields for admin display
           attributes: [
-            'id', 'carName', 'carType', 'totalSeats', 'registrationNumber',
-            'cabType', 'pricePerSeat', 'pricePerCabin', 'cabinCapacity',
-            'totalCabins', 'pricePerCar', 'imageUrl'
-          ],
+'id','carName','carType','totalSeats',
+'registrationNumber','cabType',
+'pricePerSeat','pricePerCabin',
+'cabinCapacity','totalCabins',
+'pricePerCar','imageUrl'
+],
           required: true,
-        }
+        },
+
+{
+  model: StartLocation,
+  as: 'startLocation',    // ← add
+  attributes: ['id', 'name'],
+  required: false
+},
+{
+  model: EndLocation,
+  as: 'endLocation',      // ← add
+  attributes: ['id', 'name'],
+  required: false
+}
       ],
-      attributes: ['id', 'pickupPoints', 'dropPoints', 'startTime', 'endTime', 'duration', 'status', 'created_at', 'updated_at'],
+      attributes: ['id', 'pickupPoints', 'dropPoints','startLocationId',
+'endLocationId', 'startTime', 'endTime', 'duration', 'status', 'created_at', 'updated_at'],
       order: [['created_at', 'DESC']]
     });
 
@@ -181,6 +197,7 @@ const tripService = {
 
     const processedTrips = await Promise.all(trips.map(async (trip) => {
       const seats = seatsByTrip[trip.id] || [];
+      
 
       const pickupPointIds = Array.isArray(trip.pickupPoints)
         ? trip.pickupPoints
@@ -216,6 +233,10 @@ const tripService = {
 
       return {
         id: trip.id,
+          startLocation:  trip.startLocation  || null,   // { id, name }
+  endLocation:    trip.endLocation    || null,   // { id, name }
+  startLocationId: trip.startLocationId,
+  endLocationId:   trip.endLocationId,
         pickupPoints: pickupPoints.map(p => ({
           id: p.id, name: p.name, type: 'pickup', startLocation: p.StartLocation
         })),
@@ -822,7 +843,26 @@ searchTrips: async (queryParams = {}) => {
       const leftSeats = seatsInfo.filter(s => !s.isBooked);
 
       // ── ✅ FIX 3: displayPrice correctly derived per cabType ───────────────
-      const displayPrice = getDisplayPrice(t.Car);
+      // const displayPrice = getDisplayPrice(t.Car);
+      const startId = t.startLocationId || t.dataValues?.startLocationId;
+      let displayPrice = getDisplayPrice(t.Car);   // fallback
+
+      if (startId) {
+        const defaultPickup = await PickupPoint.findOne({
+          where: {
+            startLocationId: startId,
+            isCityDefault: true,
+            status: 1,
+            price: { [Op.not]: null },
+          },
+          attributes: ['price'],
+          order: [['price', 'ASC']],   // cheapest default first
+          raw: true,
+        });
+        if (defaultPickup?.price) {
+          displayPrice = parseFloat(defaultPickup.price);
+        }
+      }
 
       // ── ✅ FIX 4: Price filter ─────────────────────────────────────────────
       if (minPrice && displayPrice < parseFloat(minPrice)) continue;
@@ -875,55 +915,96 @@ searchTrips: async (queryParams = {}) => {
       }
 
       // ── Pickup points — filtered by cabType ──────────────────────────────
-      const startLocCity = t.startLocation?.dataValues?.city || null;
-      const tripCabType  = t.Car?.cabType || 'sharing';
-      const idsToFetch   = pickupIdInt ? [pickupIdInt] : pickupIds;
+    // ✅ REPLACE WITH — trip specific + startLocation defaults, no city logic
+const tripCabType  = t.Car?.cabType || 'sharing';
+const idsToFetch   = pickupIdInt ? [pickupIdInt] : pickupIds;
 
-      const specificPickups = idsToFetch.length > 0
-        ? await PickupPoint.findAll({
-            where: {
-              id: idsToFetch,
-              [Op.or]: [{ cabType: tripCabType }, { cabType: 'all' }],
-            },
-            attributes: ['id', 'name', 'price', 'type', 'description', 'meta', 'cabType'],
-            raw: true,
-          })
-        : [];
+// 1. Trip-specific pickup points (assigned to this trip)
+const specificPickups = idsToFetch.length > 0
+  ? await PickupPoint.findAll({
+      where: {
+        id:     idsToFetch,
+        isCityDefault:false,
+        status: 1,
+        [Op.or]: [{ cabType: tripCabType }, { cabType: 'all' }],
+      },
+      attributes: ['id', 'name', 'price', 'type', 'description', 'meta', 'cabType', 'isCityDefault'],
+      raw: true,
+    })
+  : [];
 
-      let cityDefaultPickups = [];
-      if (startLocCity) {
-        cityDefaultPickups = await PickupPoint.findAll({
-          where: literal(
-            `\`PickupPoint\`.\`is_city_default\` = 1 ` +
-            `AND \`PickupPoint\`.\`city_default_for\` = '${startLocCity}' ` +
-            `AND \`PickupPoint\`.\`status\` = 1 ` +
-            `AND (\`PickupPoint\`.\`cab_type\` = '${tripCabType}' ` +
-            `OR \`PickupPoint\`.\`cab_type\` = 'all')`
-          ),
-          attributes: ['id', 'name', 'price', 'type', 'description', 'meta', 'cabType'],
-          raw: true,
-        });
-      }
+// 2. Admin-configured default pickup points for this startLocation
+//    Fetched by startLocationId — NO city column needed
+// ✅ FIX — route-specific: match startLocationId + endLocationId
+// Also fetch startLocation-only defaults (endLocationId = null) as fallback
+const defaultPickups = await PickupPoint.findAll({
+  where: {
+    startLocationId: t.startLocationId,
+    isCityDefault:   true,
+    status:          1,
+    [Op.or]: [{ cabType: tripCabType }, { cabType: 'all' }],
+    // Route-specific OR start-location-only (null = applies to all routes)
+    [Op.and]: [{
+      [Op.or]: [
+        { endLocationId: t.endLocationId },   // exact route match
+        { endLocationId: null },              // start-location-wide default
+      ]
+    }]
+  },
+  attributes: ['id', 'name', 'price', 'type', 'description', 'meta', 'cabType', 'isCityDefault', 'endLocationId'],
+  raw: true,
+  // ✅ Route-specific points take priority over start-location-wide ones
+  order: [
+    // endLocationId set = route-specific → comes first
+    [sequelize.literal('CASE WHEN end_location_id IS NOT NULL THEN 0 ELSE 1 END'), 'ASC'],
+    ['id', 'ASC']
+  ],
+});
 
-      const seenIds = new Set();
-      const mergedPickupPoints = [...cityDefaultPickups, ...specificPickups]
-        .filter(p => { if (seenIds.has(p.id)) return false; seenIds.add(p.id); return true; })
-        .map(p => ({
-          id:            p.id,
-          name:          p.name,
-          type:          p.type        || 'standard',
-          price:         p.price       || null,
-          description:   p.description || null,
-          meta:          p.meta        || null,
-          isCityDefault: cityDefaultPickups.some(d => d.id === p.id),
-          cabType:       p.cabType     || 'all',
-        }));
+// ✅ Dedup: if same-named point exists for both route-specific and start-location-wide,
+// keep only the route-specific one
+const routeSpecific    = defaultPickups.filter(p => p.endLocationId != null);
+const startLocationOnly = defaultPickups.filter(p => p.endLocationId == null);
+const routeSpecificIds  = new Set(routeSpecific.map(p => p.id));
+
+// Only include start-location-wide if no route-specific version exists
+const mergedDefaults = [
+  ...routeSpecific,
+  ...startLocationOnly.filter(p => !routeSpecificIds.has(p.id)),
+];
+
+// Use mergedDefaults instead of defaultPickups in the merge step
+const seenIds = new Set();
+const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
+  .filter(p => {
+    if (seenIds.has(p.id)) return false;
+    seenIds.add(p.id);
+    return true;
+  })
+  .map(p => ({
+    id:            p.id,
+    name:          p.name,
+    price:         p.price != null ? parseFloat(p.price) : getDisplayPrice(t.Car),
+    description:   p.description   || null,
+    meta:          p.meta          || null,
+    isCityDefault: p.isCityDefault || false,
+    cabType:       p.cabType       || 'all',
+  }));
 
       // ── Drop points ───────────────────────────────────────────────────────
       const dropPointsArr = await fetchPointNames(
         dropIdInt ? [dropIdInt] : dropIds,
         DropPoint
       );
+
+      // defaultPickups fetch ke baad
+console.log('=== PICKUP DEBUG ===');
+console.log('startLocationId:', t.startLocationId);
+console.log('tripCabType:', tripCabType);
+console.log('defaultPickups count:', defaultPickups.length);
+console.log('defaultPickups:', JSON.stringify(defaultPickups));
+console.log('specificPickups count:', specificPickups.length);
+console.log('merged count:', mergedPickupPoints.length);
 
       // ── Cabin booking info ────────────────────────────────────────────────
       let bookedCabinNumbers = [];
@@ -1000,11 +1081,12 @@ searchTrips: async (queryParams = {}) => {
     throw new Error('Failed to search for trips. Please try again later.');
   }
 },
-searchPersonalizeTrips: async (queryParams = {}) => {
+ searchPersonalizeTrips : async (queryParams = {}) => {
   try {
-    let { startLocation, endLocation, date } = queryParams;
+    // ── CHANGE 1: destructure carType ─────────────────────────────────────────
+    let { startLocation, endLocation, date, carType } = queryParams;
  
-    // ── 1. Validate required params ─────────────────────────────────────────
+    // ── 1. Validate required params ───────────────────────────────────────────
     if (!startLocation || !endLocation) {
       return { error: true, message: 'startLocation and endLocation are required' };
     }
@@ -1025,10 +1107,20 @@ searchPersonalizeTrips: async (queryParams = {}) => {
  
     const searchDate = date.trim();
  
-    // ── 2. Fetch all active personalize trips matching start + end location ──
-    // No pickup/drop filter — personalize cabs only filter by route
+    // ── CHANGE 2: build Car where clause dynamically ──────────────────────────
+    const carWhere = { cabType: 'personalize' };
+    if (carType && carType.trim() !== '') {
+      // DB column is carType, values: 'Hatchback', 'Sedan', 'SUV', etc.
+      // Use Op.iLike for case-insensitive match, or just lowercase both sides:
+      carWhere.carType = carType.trim()
+        .replace(/^\w/, c => c.toUpperCase()); // 'sedan' → 'Sedan' to match DB casing
+      // If your DB stores lowercase, just use: carWhere.carType = carType.trim().toLowerCase();
+    }
+ 
+    console.log('[searchPersonalizeTrips] carWhere:', carWhere);
+ 
+    // ── 2. Fetch trips ────────────────────────────────────────────────────────
     const trips = await Trip.findAll({
-
       where: {
         status:            true,
         start_location_id: parseInt(startLocation),
@@ -1037,7 +1129,7 @@ searchPersonalizeTrips: async (queryParams = {}) => {
       include: [
         {
           model: Car,
-          where: { cabType: 'personalize' },  // only personalize cars
+          where: carWhere,                    // ← dynamic — includes carType when sent
           attributes: [
             'id', 'carName', 'carType', 'class', 'totalSeats',
             'carUniqueNumber', 'registrationNumber',
@@ -1069,14 +1161,13 @@ searchPersonalizeTrips: async (queryParams = {}) => {
  
     console.log(`[searchPersonalizeTrips] Total personalize trips found: ${trips.length}`);
  
-    // ── 3. Filter loop ───────────────────────────────────────────────────────
+    // ── 3. Filter loop — UNCHANGED from your original ─────────────────────────
     const availableTrips = [];
  
     for (const t of trips) {
  
-      // Guard: valid start_time
       console.log(t?.dataValues?.start_time);
-      
+ 
       if (!t?.dataValues?.start_time || isNaN(new Date(t?.dataValues?.start_time).getTime())) {
         console.log(`[searchPersonalizeTrips] Skipping trip ${t.id} — invalid start_time`);
         continue;
@@ -1084,22 +1175,18 @@ searchPersonalizeTrips: async (queryParams = {}) => {
  
       const tripDateStr = new Date(t?.dataValues?.start_time).toISOString().split('T')[0];
  
-      // ── Recurring trip: show for any date on/after trip start ──
       if (t.dataValues.is_recurring) {
         if (searchDate < tripDateStr) {
           console.log(`[searchPersonalizeTrips] Skipping trip ${t.id} — search date before trip start`);
           continue;
         }
       } else {
-        // One-time trip: only show on exact date
         if (tripDateStr !== searchDate) {
           console.log(`[searchPersonalizeTrips] Skipping trip ${t.id} — date mismatch`);
           continue;
         }
       }
  
-      // ── Check if this trip is already booked for the requested date ──
-      // is_fully_booked is a permanent flag — also check bookings table for date-specific block
       const existingBooking = await Booking.findOne({
         where: {
           tripId:        t.id,
@@ -1115,7 +1202,6 @@ searchPersonalizeTrips: async (queryParams = {}) => {
         continue;
       }
  
-      // ── Build pickup and drop point names for response ──
       const pickupIds = Array.isArray(t.dataValues.pickup_points)
         ? t.dataValues.pickup_points
         : JSON.parse(t.dataValues.pickup_points || '[]');
@@ -1125,18 +1211,12 @@ searchPersonalizeTrips: async (queryParams = {}) => {
         : JSON.parse(t.dataValues.drop_points || '[]');
  
       const [pickupPoints, dropPoints] = await Promise.all([
-        pickupIds.length > 0 ? PickupPoint.findAll({
-          where: { id: pickupIds },
-          attributes: ['id', 'name']
-        }) : [],
-        dropIds.length > 0 ? DropPoint.findAll({
-          where: { id: dropIds },
-          attributes: ['id', 'name']
-        }) : []
+        pickupIds.length > 0 ? PickupPoint.findAll({ where: { id: pickupIds }, attributes: ['id', 'name'] }) : [],
+        dropIds.length > 0   ? DropPoint.findAll({  where: { id: dropIds   }, attributes: ['id', 'name'] }) : []
       ]);
  
       availableTrips.push({
-        id:           t.id,
+        id:            t.id,
         startLocation: t.dataValues.startLocation,
         endLocation:   t.dataValues.endLocation,
         startTime:     t.dataValues.start_time,
@@ -1158,14 +1238,13 @@ searchPersonalizeTrips: async (queryParams = {}) => {
           pricePerCar:        t.dataValues.Car?.pricePerCar,
           imageUrl:           t.dataValues.Car?.imageUrl,
         },
-        price:         parseFloat(t.dataValues.Car?.pricePerCar || 0),
-        createdAt:     t.dataValues.created_at,
+        price:    parseFloat(t.dataValues.Car?.pricePerCar || 0),
+        createdAt: t.dataValues.created_at,
       });
     }
  
     console.log(`[searchPersonalizeTrips] Available trips after filtering: ${availableTrips.length}`);
  
-    // Sort by price low to high by default
     availableTrips.sort((a, b) => a.price - b.price);
  
     return availableTrips;

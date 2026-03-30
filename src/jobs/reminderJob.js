@@ -11,7 +11,7 @@ const { sendWhatsApp, retryFailedNotifications } = require('../services/notifica
 // Finds bookings whose trip starts in the next 55–65 min window
 // and haven't had a reminder sent yet
 
-cron.schedule('*/2 * * * *', async () => {
+cron.schedule('*/60 * * * *', async () => {
   console.log('[ReminderJob] Running...');
   try {
     const now = new Date();

@@ -178,7 +178,6 @@ Booking.belongsTo(DropPoint, {
   targetKey: 'id'
 });
 
-
 Booking.hasMany(BookedSeat, { foreignKey: 'bookingId', onDelete: 'CASCADE' });
 BookedSeat.belongsTo(Booking, { foreignKey: 'bookingId' });
 

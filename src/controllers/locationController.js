@@ -127,6 +127,17 @@ getLocationInfo: asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data });
 }),
 
+getPersonalizeStartLocations: asyncHandler(async (req, res) => {
+  const data = await locationService.getPersonalizeStartLocations();
+  res.status(200).json({ success: true, data });
+}),
+
+getPersonalizeEndLocations: asyncHandler(async (req, res) => {
+  const { startLocationId } = req.query;
+  const data = await locationService.getPersonalizeEndLocations(startLocationId);
+  res.status(200).json({ success: true, data });
+}),
+
   getAllEndLocations: asyncHandler(async (req, res) => {
     const endLocation = await locationService.getAllEndLocations();
     res.status(200).json({ success: true, data: endLocation });
