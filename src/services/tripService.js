@@ -980,13 +980,17 @@ searchTrips: async (queryParams = {}) => {
             isCityDefault: true,
             status: 1,
             price: { [Op.not]: null },
+            endLocationId: t.endLocationId,
           },
-          attributes: ['price'],
+          
           order: [['price', 'ASC']],   // cheapest default first
           raw: true,
         });
         if (defaultPickup?.price) {
-          displayPrice = parseFloat(defaultPickup.price);
+          displayPrice = Math.min(
+            displayPrice,
+            parseFloat(defaultPickup.price)
+          );
         }
       }
 
