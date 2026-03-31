@@ -97,7 +97,13 @@ const Trip = sequelize.define('Trip', {
     defaultValue: 'none',
     field: 'repeat_type',
     comment: 'Type of repetition for the trip (none, daily)'
-  }
+  },
+  tripGroupId: {
+  type: DataTypes.STRING(36),
+  allowNull: true,
+  defaultValue: null,
+  field: 'trip_group_id',   // maps to your DB column name
+},
 }, {
   tableName: 'Trips',
   timestamps: true,

@@ -1,58 +1,79 @@
 const tripService = require('../services/tripService');
 const asyncHandler = require('../../middleware/async');
 const { BadRequestError } = require('../utils/errors');
+const { Trip } = require('../db/models');
 
 const tripController = {
+  // createTrip: asyncHandler(async (req, res) => {
+  //   const { seats, meals = [], ...tripData } = req.body;
+
+  //   // Validate required fields
+  //   const requiredFields = [
+  //     'startLocationId', 'endLocationId', 'carId',
+  //     'startTime', 'endTime'
+  //   ];
+
+  //   const missingFields = requiredFields.filter(field => !tripData[field]);
+  //   if (missingFields.length > 0) {
+  //     throw new BadRequestError(`Missing required fields: ${missingFields.join(', ')}`);
+  //   }
+
+  //   // Validate seats — price is NO LONGER required here, it comes from the car
+  //   if (!seats || !Array.isArray(seats) || seats.length === 0) {
+  //     throw new BadRequestError('At least one seat is required');
+  //   }
+
+  //   // Only validate seatNumber and seatType — price comes from car
+  //   for (const [i, seat] of seats.entries()) {
+  //     if (!seat.seatNumber) {
+  //       throw new BadRequestError(`Seat at index ${i} is missing seatNumber`);
+  //     }
+  //     if (!seat.seatType) {
+  //       throw new BadRequestError(`Seat at index ${i} is missing seatType`);
+  //     }
+  //   }
+
+  //   // Validate startTime and endTime
+  //   const startTime = new Date(tripData.startTime);
+  //   const endTime = new Date(tripData.endTime);
+
+  //   if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+  //     throw new BadRequestError('Invalid date format for startTime or endTime');
+  //   }
+
+  //   if (startTime >= endTime) {
+  //     throw new BadRequestError('endTime must be after startTime');
+  //   }
+
+  //   // Create trip — price will be derived from car inside the service
+  //   const trip = await tripService.createTripWithSeats(tripData, seats, meals);
+
+  //   res.status(201).json({
+  //     success: true,
+  //     data: trip
+  //   });
+  // }),
   createTrip: asyncHandler(async (req, res) => {
-    const { seats, meals = [], ...tripData } = req.body;
+  const { seats, meals, ...tripData } = req.body;
 
-    // Validate required fields
-    const requiredFields = [
-      'startLocationId', 'endLocationId', 'carId',
-      'startTime', 'endTime'
-    ];
+  // startTimes array OR single startTime
+  if (!tripData.startTimes && !tripData.startTime) {
+    return res.status(400).json({ success: false, message: 'startTime or startTimes required' });
+  }
 
-    const missingFields = requiredFields.filter(field => !tripData[field]);
-    if (missingFields.length > 0) {
-      throw new BadRequestError(`Missing required fields: ${missingFields.join(', ')}`);
-    }
+  const result = await tripService.createTripWithSeats(tripData, seats, meals);
+  // result is always an array now
+  const trips = Array.isArray(result) ? result : [result];
 
-    // Validate seats — price is NO LONGER required here, it comes from the car
-    if (!seats || !Array.isArray(seats) || seats.length === 0) {
-      throw new BadRequestError('At least one seat is required');
-    }
-
-    // Only validate seatNumber and seatType — price comes from car
-    for (const [i, seat] of seats.entries()) {
-      if (!seat.seatNumber) {
-        throw new BadRequestError(`Seat at index ${i} is missing seatNumber`);
-      }
-      if (!seat.seatType) {
-        throw new BadRequestError(`Seat at index ${i} is missing seatType`);
-      }
-    }
-
-    // Validate startTime and endTime
-    const startTime = new Date(tripData.startTime);
-    const endTime = new Date(tripData.endTime);
-
-    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
-      throw new BadRequestError('Invalid date format for startTime or endTime');
-    }
-
-    if (startTime >= endTime) {
-      throw new BadRequestError('endTime must be after startTime');
-    }
-
-    // Create trip — price will be derived from car inside the service
-    const trip = await tripService.createTripWithSeats(tripData, seats, meals);
-
-    res.status(201).json({
-      success: true,
-      data: trip
-    });
-  }),
-
+  res.status(201).json({
+    success: true,
+    count:   trips.length,
+    data:    trips,
+    message: trips.length > 1
+      ? `${trips.length} trips created successfully`
+      : 'Trip created successfully',
+  });
+}),
   getAllTrips: asyncHandler(async (req, res) => {
     const trips = await tripService.getAllTrips(req.query);
     res.status(200).json({
@@ -95,6 +116,38 @@ const tripController = {
     const result = await tripService.deleteTrip(req.params.id);
     res.status(200).json({ success: true, data: result });
   }),
+updateTripGroup: asyncHandler(async (req, res) => {
+  const { tripGroupId } = req.params;
+  const { startTimes, endTime, ...sharedData } = req.body;
+
+  const result = await tripService.syncTripGroup(tripGroupId, startTimes, endTime, sharedData);
+
+  res.status(200).json({
+    success: true,
+    data: result,
+    message: `Trip group synced: ${result.kept} kept, ${result.created} created, ${result.deleted} deleted`,
+  });
+}),
+
+deleteTripGroup: asyncHandler(async (req, res) => {
+  const { tripGroupId } = req.params;
+
+  const trips = await Trip.findAll({ where: { tripGroupId } });
+  if (!trips.length) {
+    throw new NotFoundError('No trips found for this group');
+  }
+
+  // Reuse existing deleteTrip service for each — handles seats, bookings, etc.
+  for (const trip of trips) {
+    await tripService.deleteTrip(trip.id);
+  }
+
+  res.status(200).json({
+    success: true,
+    count: trips.length,
+    message: `${trips.length} trips deleted successfully`,
+  });
+}),
 
   searchTrips: asyncHandler(async (req, res) => {
     const trips = await tripService.searchTrips(req.query);

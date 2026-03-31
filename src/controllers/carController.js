@@ -29,7 +29,7 @@ const carController = {
 
   // ── Get All Cars ───────────────────────────────────────────
   getAllCars: asyncHandler(async (req, res) => {
-    const cars = await carService.getAllCars();
+    const cars = await carService.getAllCars(req.query);
     res.status(200).json({ success: true, data: cars });
   }),
 

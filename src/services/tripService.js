@@ -56,78 +56,179 @@ const tripService = {
   // For sharing:     each seat gets car.pricePerSeat
   // For cabin:       each seat gets car.pricePerCabin (price per cabin unit)
   // For personalize: each seat gets car.pricePerCar (flat, whole car)
-  // ─────────────────────────────────────────────────────────────────────────
-  createTripWithSeats: async (tripData, seats, meals = []) => {
-    return await sequelize.transaction(async (transaction) => {
-      // Check for duplicate trip
-      const existingTrip = await tripService.findTripByCarAndDate(
-        tripData.carId,
-        tripData.startTime
-      );
+  // // ─────────────────────────────────────────────────────────────────────────
+  // createTripWithSeats: async (tripData, seats, meals = []) => {
+  //   return await sequelize.transaction(async (transaction) => {
+  //     // Check for duplicate trip
+  //     const existingTrip = await tripService.findTripByCarAndDate(
+  //       tripData.carId,
+  //       tripData.startTime
+  //     );
 
-      if (existingTrip) {
-        throw new ConflictError('A trip already exists for this car during the selected time period');
-      }
+  //     if (existingTrip) {
+  //       throw new ConflictError('A trip already exists for this car during the selected time period');
+  //     }
 
-      // Calculate duration
-      const duration = calculateDuration(new Date(tripData.startTime), new Date(tripData.endTime));
+  //     // Calculate duration
+  //     const duration = calculateDuration(new Date(tripData.startTime), new Date(tripData.endTime));
 
-      // Validate seats
-      if (!seats || !Array.isArray(seats) || seats.length === 0) {
-        throw new BadRequestError('At least one seat is required');
-      }
+  //     // Validate seats
+  //     if (!seats || !Array.isArray(seats) || seats.length === 0) {
+  //       throw new BadRequestError('At least one seat is required');
+  //     }
 
-      seats.forEach((seat, index) => {
-        if (!seat.seatNumber) {
-          throw new BadRequestError(`Seat at index ${index} is missing seatNumber`);
-        }
+  //     seats.forEach((seat, index) => {
+  //       if (!seat.seatNumber) {
+  //         throw new BadRequestError(`Seat at index ${index} is missing seatNumber`);
+  //       }
+  //     });
+
+  //     // Validate meals
+  //     if (meals && meals.length > 0) {
+  //       meals.forEach((meal, index) => {
+  //         if (!meal.type || typeof meal.price !== 'number') {
+  //           throw new BadRequestError(`Meal at index ${index} is missing required fields (type, price)`);
+  //         }
+  //       });
+  //     }
+
+  //     // Get the car — we derive ALL pricing from here
+  //     const car = await Car.findByPk(tripData.carId, { transaction });
+  //     if (!car) {
+  //       throw new BadRequestError('Car not found');
+  //     }
+
+  //     // Determine seat price based on cab type
+  //     // sharing    → pricePerSeat (per individual seat)
+  //     // cabin      → pricePerCabin (per cabin unit)
+  //     // personalize→ pricePerCar (flat for whole car)
+  //     const seatPrice = getSeatPriceFromCar(car);
+
+  //     // Prepare trip data
+  //     const tripToCreate = {
+  //       ...tripData,
+  //       duration,
+  //       meals: meals.length > 0 ? meals : null
+  //     };
+
+  //     // Create the trip
+  //     const trip = await tripService.createTrip(tripToCreate, { transaction });
+
+  //     // Create seats — price always from car, seatType from frontend
+  //     const seatData = seats.map(seat => ({
+  //       seatNumber: seat.seatNumber,
+  //       seatType: seat.seatType || 'middle',
+  //       tripId: trip.id,
+  //       price: seatPrice,
+  //       isBooked: false
+  //     }));
+
+  //     await Seat.bulkCreate(seatData, { transaction });
+
+  //     return trip;
+  //   });
+  // },
+
+  // new create trip function which make create mutiple trip basis of timings
+  // Replace createTripWithSeats with this version that accepts multiple times
+createTripWithSeats: async (tripData, seats, meals = []) => {
+  return await sequelize.transaction(async (transaction) => {
+
+    // ── Multi-timing support ────────────────────────────────────────────────
+    // tripData.startTimes = ['2026-03-30 06:00:00', '2026-03-30 10:00:00', ...]
+    // If single time, wrap in array for uniform handling
+    const startTimes = Array.isArray(tripData.startTimes)
+      ? tripData.startTimes
+      : [tripData.startTime];
+
+    if (startTimes.length === 0) {
+      throw new BadRequestError('At least one departure time is required');
+    }
+
+    // Validate seats
+    if (!seats?.length) throw new BadRequestError('At least one seat is required');
+    seats.forEach((seat, i) => {
+      if (!seat.seatNumber) throw new BadRequestError(`Seat at index ${i} missing seatNumber`);
+    });
+
+    // Validate meals
+    if (meals?.length) {
+      meals.forEach((meal, i) => {
+        if (!meal.type || typeof meal.price !== 'number')
+          throw new BadRequestError(`Meal at index ${i} missing type or price`);
       });
+    }
 
-      // Validate meals
-      if (meals && meals.length > 0) {
-        meals.forEach((meal, index) => {
-          if (!meal.type || typeof meal.price !== 'number') {
-            throw new BadRequestError(`Meal at index ${index} is missing required fields (type, price)`);
-          }
-        });
+    // Get car for pricing
+    const car = await Car.findByPk(tripData.carId, { transaction });
+    if (!car) throw new BadRequestError('Car not found');
+    const seatPrice = getSeatPriceFromCar(car);
+
+    // ── Generate shared group ID for all trips in this batch ──────────────
+    const { v4: uuidv4 } = require('uuid');
+    const tripGroupId = startTimes.length > 1 ? uuidv4() : null;
+
+    const createdTrips = [];
+
+    for (const startTime of startTimes) {
+      // Check duplicate per car + time
+      const existing = await tripService.findTripByCarAndDate(
+        tripData.carId, startTime
+      );
+      if (existing) {
+        throw new ConflictError(
+          `A trip already exists for this car at ${startTime}`
+        );
       }
 
-      // Get the car — we derive ALL pricing from here
-      const car = await Car.findByPk(tripData.carId, { transaction });
-      if (!car) {
-        throw new BadRequestError('Car not found');
+      const startDt  = new Date(startTime);
+      // Calculate endTime by adding duration offset from original startTime → endTime
+      let endDt;
+      if (tripData.startTime && tripData.endTime) {
+        const durationMs = new Date(tripData.endTime) - new Date(tripData.startTime);
+        endDt = new Date(startDt.getTime() + durationMs);
+      } else {
+        endDt = new Date(startDt.getTime() + 5 * 60 * 60 * 1000); // default 5h
       }
 
-      // Determine seat price based on cab type
-      // sharing    → pricePerSeat (per individual seat)
-      // cabin      → pricePerCabin (per cabin unit)
-      // personalize→ pricePerCar (flat for whole car)
-      const seatPrice = getSeatPriceFromCar(car);
+      const duration = calculateDuration(startDt, endDt);
 
-      // Prepare trip data
       const tripToCreate = {
-        ...tripData,
+        startLocationId: tripData.startLocationId,
+        endLocationId:   tripData.endLocationId,
+        pickupPoints:    tripData.pickupPoints,
+        dropPoints:      tripData.dropPoints,
+        carId:           tripData.carId,
+        startTime:       startDt,
+        endTime:         endDt,
         duration,
-        meals: meals.length > 0 ? meals : null
+        status:          tripData.status ?? true,
+        isRecurring:     tripData.isRecurring ?? true,
+        repeatType:      tripData.repeatType  ?? 'daily',
+        meals:           meals.length > 0 ? meals : null,
+        tripGroupId,     // ← links all trips in this batch
       };
 
-      // Create the trip
       const trip = await tripService.createTrip(tripToCreate, { transaction });
 
-      // Create seats — price always from car, seatType from frontend
-      const seatData = seats.map(seat => ({
-        seatNumber: seat.seatNumber,
-        seatType: seat.seatType || 'middle',
-        tripId: trip.id,
-        price: seatPrice,
-        isBooked: false
-      }));
+      // Create seats for this trip
+      await Seat.bulkCreate(
+        seats.map(seat => ({
+          seatNumber: seat.seatNumber,
+          seatType:   seat.seatType || 'middle',
+          tripId:     trip.id,
+          price:      seatPrice,
+          isBooked:   false,
+        })),
+        { transaction }
+      );
 
-      await Seat.bulkCreate(seatData, { transaction });
+      createdTrips.push(trip);
+    }
 
-      return trip;
-    });
-  },
+    return createdTrips; // array of created trips
+  });
+},
 
   getAllTrips: async (query = {}) => {
     const { pickupPoint, dropPoint, date, ...otherFilters } = query;
@@ -179,7 +280,7 @@ const tripService = {
 }
       ],
       attributes: ['id', 'pickupPoints', 'dropPoints','startLocationId',
-'endLocationId', 'startTime', 'endTime', 'duration', 'status', 'created_at', 'updated_at'],
+'endLocationId', 'startTime', 'endTime', 'duration', 'status','tripGroupId', 'created_at', 'updated_at'],
       order: [['created_at', 'DESC']]
     });
 
@@ -233,10 +334,11 @@ const tripService = {
 
       return {
         id: trip.id,
-          startLocation:  trip.startLocation  || null,   // { id, name }
-  endLocation:    trip.endLocation    || null,   // { id, name }
-  startLocationId: trip.startLocationId,
-  endLocationId:   trip.endLocationId,
+        tripGroupId:  trip.tripGroupId || null, 
+        startLocation:  trip.startLocation  || null,   // { id, name }
+        endLocation:    trip.endLocation    || null,   // { id, name }
+        startLocationId: trip.startLocationId,
+        endLocationId:   trip.endLocationId,
         pickupPoints: pickupPoints.map(p => ({
           id: p.id, name: p.name, type: 'pickup', startLocation: p.StartLocation
         })),
@@ -256,8 +358,32 @@ const tripService = {
       };
     }));
 
-    return processedTrips.filter(trip => trip !== null);
-  },
+     const filtered = processedTrips.filter(Boolean);
+
+  // ── Group trips by tripGroupId ─────────────────────────────────────────
+  const groups   = {};
+  const ungrouped = [];
+
+  for (const trip of filtered) {
+    if (trip.tripGroupId) {
+      if (!groups[trip.tripGroupId]) {
+        groups[trip.tripGroupId] = { ...trip, timings: [trip.startTime] };
+      } else {
+        groups[trip.tripGroupId].timings.push(trip.startTime);
+        // Keep earliest time as primary
+        if (new Date(trip.startTime) < new Date(groups[trip.tripGroupId].startTime)) {
+          groups[trip.tripGroupId].startTime = trip.startTime;
+          groups[trip.tripGroupId].endTime   = trip.endTime;
+        }
+      }
+    } else {
+      ungrouped.push({ ...trip, timings: [trip.startTime] });
+    }
+  }
+
+  return [...Object.values(groups), ...ungrouped]
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+},
 
   getTripById: async (id) => {
     const trip = await Trip.findByPk(id, {
@@ -945,10 +1071,7 @@ const defaultPickups = await PickupPoint.findAll({
     [Op.or]: [{ cabType: tripCabType }, { cabType: 'all' }],
     // Route-specific OR start-location-only (null = applies to all routes)
     [Op.and]: [{
-      [Op.or]: [
-        { endLocationId: t.endLocationId },   // exact route match
-        { endLocationId: null },              // start-location-wide default
-      ]
+     endLocationId: t.endLocationId,
     }]
   },
   attributes: ['id', 'name', 'price', 'type', 'description', 'meta', 'cabType', 'isCityDefault', 'endLocationId'],
@@ -1308,12 +1431,212 @@ console.log('merged count:', mergedPickupPoints.length);
   deleteTrip: async (id) => {
     const trip = await tripService.getTripById(id);
     await SeatPricing.destroy({ where: { tripId: id } });
+      await Seat.destroy({ where: { tripId: id } });
     await BookedSeat.destroy({ where: { tripId: id } });
     await Booking.destroy({ where: { tripId: id } });
     await Trip.destroy({ where: { id } });
     return { message: 'Trip deleted successfully' };
   },
+  syncTripGroup: async (tripGroupId, newStartTimes = [], newEndTime, sharedData) => {
+  return await sequelize.transaction(async (transaction) => {
+
+    // ── Fetch all existing trips in this group ────────────────────────────
+    const existingTrips = await Trip.findAll({
+      where: { tripGroupId },
+      order: [['startTime', 'ASC']],
+      transaction,
+    });
+
+    if (!existingTrips.length) {
+      throw new NotFoundError('No trips found for this group');
+    }
+
+    // Use first trip as the source of truth for shared fields
+    const baseTrip = existingTrips[0];
+
+    // ── Normalize times to "HH:MM" for comparison ─────────────────────────
+    // DB times like "2026-03-31T09:00:00.000Z" → "09:00"
+    const toHHMM = (datetimeStr) => {
+      const d = new Date(datetimeStr);
+      return d.toTimeString().slice(0, 5); // "HH:MM"
+    };
+
+    // Build a map: "HH:MM" → Trip instance
+    const existingMap = new Map();
+    for (const trip of existingTrips) {
+      existingMap.set(toHHMM(trip.startTime), trip);
+    }
+
+    // Normalize incoming startTimes → extract HH:MM from full datetime strings
+    // newStartTimes = ["2026-03-31 10:00:00", "2026-03-31 16:00:00"]
+    const newTimesMap = new Map(); // "HH:MM" → full datetime string
+    for (const t of newStartTimes) {
+      const d = new Date(t);
+      const hhmm = d.toTimeString().slice(0, 5);
+      newTimesMap.set(hhmm, t);
+    }
+
+    const existingKeys = new Set(existingMap.keys()); // {"09:00","11:00","14:00","16:00"}
+    const newKeys      = new Set(newTimesMap.keys()); // {"10:00","16:00"}
+
+    // ── Compute diff ──────────────────────────────────────────────────────
+    const toDelete = [...existingKeys].filter(t => !newKeys.has(t)); // ["09:00","11:00","14:00"]
+    const toCreate = [...newKeys].filter(t => !existingKeys.has(t)); // ["10:00"]
+    const toKeep   = [...existingKeys].filter(t => newKeys.has(t));  // ["16:00"]
+
+    // ── Duration calculation (same pattern as createTripWithSeats) ────────
+    // newEndTime is for the FIRST departure, so duration is fixed
+    const firstNewStartTime = newStartTimes[0] ? new Date(newStartTimes[0]) : null;
+    const endTimeDt = newEndTime ? new Date(newEndTime) : null;
+
+    const getDuration = (startDt) => {
+      if (!firstNewStartTime || !endTimeDt) return baseTrip.duration;
+      const durationMs = endTimeDt - firstNewStartTime;
+      const tripEndDt = new Date(startDt.getTime() + durationMs);
+      return calculateDuration(startDt, tripEndDt);
+    };
+
+    const getTripEndTime = (startDt) => {
+      if (!firstNewStartTime || !endTimeDt) return baseTrip.endTime;
+      const durationMs = endTimeDt - firstNewStartTime;
+      return new Date(startDt.getTime() + durationMs);
+    };
+
+    // ── Step 1: DELETE removed trips ──────────────────────────────────────
+    let deletedCount = 0;
+    for (const hhmm of toDelete) {
+      const trip = existingMap.get(hhmm);
+      // Clean up related records first
+      await SeatPricing.destroy({ where: { tripId: trip.id }, transaction });
+      await BookedSeat.destroy({ where: { tripId: trip.id }, transaction });
+      await Booking.destroy({ where: { tripId: trip.id }, transaction });
+      await Seat.destroy({ where: { tripId: trip.id }, transaction });
+      await Trip.destroy({ where: { id: trip.id }, transaction });
+      deletedCount++;
+    }
+
+    // ── Step 2: UPDATE kept trips with new shared data ────────────────────
+    let keptCount = 0;
+    for (const hhmm of toKeep) {
+      const trip = existingMap.get(hhmm);
+      const startDt = new Date(newTimesMap.get(hhmm)); // same time, possibly new date
+
+      const updatePayload = {
+        ...buildSharedUpdateData(sharedData),
+        startTime: startDt,
+        endTime:   getTripEndTime(startDt),
+        duration:  getDuration(startDt),
+      };
+
+      await trip.update(updatePayload, { transaction });
+
+      // Update seats if seatsInfo provided
+      if (sharedData.seatsInfo?.length) {
+        await syncSeats(trip.id, sharedData.seatsInfo, trip.carId, transaction);
+      }
+
+      keptCount++;
+    }
+
+    // ── Step 3: CREATE new trips ──────────────────────────────────────────
+    const car = await Car.findByPk(sharedData.carId || baseTrip.carId, { transaction });
+    if (!car) throw new BadRequestError('Car not found');
+    const seatPrice = getSeatPriceFromCar(car);
+
+    let createdCount = 0;
+    for (const hhmm of toCreate) {
+      const fullDatetime = newTimesMap.get(hhmm);
+      const startDt = new Date(fullDatetime);
+
+      // Check for duplicate (same car + same time already exists outside this group)
+      const duplicate = await Trip.findOne({
+        where: {
+          carId: car.id,
+          startTime: startDt,
+          tripGroupId: { [Op.ne]: tripGroupId }, // allow within same group
+        },
+        transaction,
+      });
+      if (duplicate) {
+        throw new ConflictError(`A trip already exists for this car at ${fullDatetime}`);
+      }
+
+      const newTrip = await Trip.create({
+        // Inherit all shared fields from base trip
+        startLocationId: sharedData.startLocationId || baseTrip.startLocationId,
+        endLocationId:   sharedData.endLocationId   || baseTrip.endLocationId,
+        pickupPoints:    sharedData.pickupPoints     || baseTrip.pickupPoints,
+        dropPoints:      sharedData.dropPoints       || baseTrip.dropPoints,
+        carId:           car.id,
+        startTime:       startDt,
+        endTime:         getTripEndTime(startDt),
+        duration:        getDuration(startDt),
+        status:          sharedData.status ?? baseTrip.status,
+        isRecurring:     baseTrip.isRecurring,
+        repeatType:      baseTrip.repeatType,
+        meals:           sharedData.meals || baseTrip.meals,
+        tripGroupId,     // ← same group ID — Rule 3
+      }, { transaction });
+
+      // Create seats for new trip — copy structure from base trip's seats
+      const baseSeats = sharedData.seatsInfo?.length
+        ? sharedData.seatsInfo
+        : await Seat.findAll({ where: { tripId: baseTrip.id }, transaction });
+
+      await Seat.bulkCreate(
+        baseSeats.map(seat => ({
+          seatNumber: seat.seatNumber,
+          seatType:   seat.seatType || 'middle',
+          tripId:     newTrip.id,
+          price:      seatPrice,
+          isBooked:   false,
+        })),
+        { transaction }
+      );
+
+      createdCount++;
+    }
+
+    return {
+      tripGroupId,
+      kept:    keptCount,
+      created: createdCount,
+      deleted: deletedCount,
+      total:   keptCount + createdCount,
+    };
+  });
+},
 };
+
+// Filters only the fields that should be applied to all trips in a group update
+const buildSharedUpdateData = (sharedData) => {
+  const allowed = [
+    'startLocationId', 'endLocationId', 'pickupPoints',
+    'dropPoints', 'carId', 'status', 'meals',
+    'isRecurring', 'repeatType',
+  ];
+  return Object.fromEntries(
+    Object.entries(sharedData).filter(([k]) => allowed.includes(k))
+  );
+};
+
+// Syncs seats for a kept trip when seatsInfo is updated
+const syncSeats = async (tripId, seatsInfo, carId, transaction) => {
+  const car = await Car.findByPk(carId, { transaction });
+  const seatPrice = getSeatPriceFromCar(car);
+  const existingSeats = await Seat.findAll({ where: { tripId }, transaction });
+  const seatMap = new Map(existingSeats.map(s => [s.seatNumber, s]));
+
+  for (const seatData of seatsInfo) {
+    if (seatMap.has(seatData.seatNumber)) {
+      await seatMap.get(seatData.seatNumber).update({
+        seatType: seatData.seatType || 'middle',
+        price: seatPrice,
+      }, { transaction });
+    }
+  }
+};
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: derive seat price from car based on cab type

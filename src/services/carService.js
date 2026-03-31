@@ -42,12 +42,14 @@ const carService = {
     }
       // Allow filtering by cab type if needed
     if (cabType) {
-      where.cabType = cabType;
+      // 'sharing,cabin' → filter sharing OR cabin
+      const types = cabType.split(',').map(t => t.trim());
+      where.cabType = types.length > 1 ? { [Op.in]: types } : types[0];
     }
     
     return Car.findAll({
       where,
-      order: [['created_at', 'DESC']]
+      order: [['created_at', 'ASC']]
     });
   },
 

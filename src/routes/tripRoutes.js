@@ -27,4 +27,8 @@ router.put("/update/:id", tripController.updateTrip);
 // 👉 Delete a trip by ID
 router.delete("/delete/:id", tripController.deleteTrip);
 
+router.put("/update-group/:tripGroupId", tripController.updateTripGroup);
+
+router.delete("/delete-group/:tripGroupId", tripController.deleteTripGroup);
+
 module.exports = router;

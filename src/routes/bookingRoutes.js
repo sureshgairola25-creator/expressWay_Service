@@ -40,11 +40,11 @@ router.post('/personalize', /* authenticate, */ bookingController.initiatePerson
  
 // User's own bookings
 router.get('/my-bookings',      /* authenticate, */ bookingController.getUserBookings);
-router.get('/:bookingId',       /* authenticate, */ bookingController.getBookingDetails);
+router.get('detail/:bookingId',       /* authenticate, */ bookingController.getBookingDetails);
 router.patch('/:id/cancel',     /* authenticate, */ bookingController.cancelBooking);
  
 // ── Admin routes ──────────────────────────────────────────────────────────────
-router.get('/admin/list',                              /* isAdmin, */ bookingController.getBookingList);
+router.get('/list',                              /* isAdmin, */ bookingController.getBookingList);
 router.patch('/admin/:bookingId/payment-status',       /* isAdmin, */ bookingController.updatePaymentStatus);
 
 router.get(
