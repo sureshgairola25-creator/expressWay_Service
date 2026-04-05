@@ -99,11 +99,41 @@ const Trip = sequelize.define('Trip', {
     comment: 'Type of repetition for the trip (none, daily)'
   },
   tripGroupId: {
-  type: DataTypes.STRING(36),
-  allowNull: true,
-  defaultValue: null,
-  field: 'trip_group_id',   // maps to your DB column name
-},
+    type: DataTypes.STRING(36),
+    allowNull: true,
+    defaultValue: null,
+    field: 'trip_group_id',
+  },
+
+  // ── Seat inventory snapshot (set at trip creation, never updated from car) ──
+  availableSeats: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: null,
+    field: 'available_seats',
+    comment: 'Live counter; decremented on each booking',
+  },
+  totalSeatsSnapshot: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: null,
+    field: 'total_seats_snapshot',
+    comment: 'car.totalSeats captured at trip creation time',
+  },
+  seatsPerCabinSnapshot: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: null,
+    field: 'seats_per_cabin_snapshot',
+    comment: 'car.cabinCapacity captured at trip creation time; NULL for personalized',
+  },
+  bookingModeSnapshot: {
+    type: DataTypes.ENUM('sharing_and_cabin', 'personalized'),
+    allowNull: true,
+    defaultValue: null,
+    field: 'booking_mode_snapshot',
+    comment: 'car.bookingMode captured at trip creation time',
+  },
 }, {
   tableName: 'Trips',
   timestamps: true,

@@ -125,6 +125,12 @@ const Booking = sequelize.define('Booking', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  couponId: {
+  type: DataTypes.INTEGER,
+  allowNull: true,
+  defaultValue: null,
+  field: 'coupon_id'
+},
   
   // Future-proofing fields
   // couponId: {

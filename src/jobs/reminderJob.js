@@ -102,4 +102,17 @@ cron.schedule('*/15 * * * *', async () => {
   }
 });
 
+// Har 5 min mein expired bookings release karo
+cron.schedule('*/5 * * * *', async () => {
+  await Booking.update(
+    { bookingStatus: 'expired' },
+    {
+      where: {
+        bookingStatus: 'initiated',
+        paymentExpiry: { [Op.lt]: new Date() }
+      }
+    }
+  );
+});
+
 console.log('[Jobs] Reminder + retry cron jobs registered');

@@ -39,7 +39,7 @@ const generateNextBookingId = async () => {
 // Helper: validate trip is active and journeyDate is valid
 // ─────────────────────────────────────────────────────────────────────────────
 const validateTripAndDate = async (tripId, journeyDate) => {
-  const trip = await Trip.findByPk(tripId, { include: [{ model: Car }] });
+  const trip = await Trip.findByPk(tripId, { include: [{ model: Car,as: 'car',required: true }] });
   if (!trip)               throw new BadRequest('Trip not found');
   if (trip.status !== true) throw new BadRequest('Trip is not active');
 
@@ -74,28 +74,25 @@ const buildPaymentAmounts = (totalAmount, paidAmount, paymentMode) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: get already booked seat numbers for a trip on a date
 // ─────────────────────────────────────────────────────────────────────────────
-const getBookedSeatNumbers = async (tripId, journeyDate) => {
-  const bookings = await Booking.findAll({
+async function getBookedSeatNumbers(tripId, journeyDate) {
+  const activeBookings = await Booking.findAll({
     where: {
       tripId,
-      journeyDate:   new Date(journeyDate),
-      bookingStatus: { [Op.not]: 'cancelled' }
+      journeyDate: new Date(journeyDate),
+      bookingStatus: { [Op.notIn]: ['cancelled', 'failed', 'expired'] }
     },
     attributes: ['seats'],
     raw: true
   });
-  const booked = new Set();
-  bookings.forEach(b => {
-    try {
-      const seats = typeof b.seats === 'string' ? JSON.parse(b.seats) : (b.seats || []);
-      seats.forEach(s => {
-        const num = s?.seatNumber || s?.seat_number || s;
-        if (num) booked.add(num);
-      });
-    } catch (e) { /* ignore */ }
+
+  const bookedSeats = new Set();
+  activeBookings.forEach(b => {
+    const seats = typeof b.seats === 'string' ? JSON.parse(b.seats) : (b.seats || []);
+    seats.forEach(s => bookedSeats.add(s.seatNumber || s.seat_number || s));
   });
-  return booked;
-};
+
+  return bookedSeats;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: sanitize passenger array
@@ -150,9 +147,16 @@ const bookingService = {
 
     const trip = await validateTripAndDate(tripId, journeyDate);
 
-    if (trip.Car?.cabType !== 'sharing') {
+    // AFTER — availableModes bhi check karo
+    const carModes = trip.car?.availableModes || [];
+    const isSharingEligible =
+      trip.car?.cabType === 'sharing' ||
+      carModes.includes('sharing');
+
+    if (!isSharingEligible) {
       throw new BadRequest('This trip is not a sharing cab.');
     }
+
 
     // Seat availability check
     const bookedSeatNumbers = await getBookedSeatNumbers(tripId, journeyDate);
@@ -175,21 +179,20 @@ const bookingService = {
     });
 
     const pickupPoint = await PickupPoint.findByPk(pickupPointId, {
-  attributes: ['id', 'name', 'price', 'type']
-});
-   // Price priority:
-// 1. Pickup point fixed price (metro/railway) → use it
-// 2. Current car.pricePerSeat → use it (NOT stale seat record price)
-const effectivePricePerSeat =
-  pickupPoint?.price != null
-    ? parseFloat(pickupPoint.price)          // metro: 899 or 999
-    : parseFloat(car?.pricePerSeat || 0);    // standard: current car price
+      attributes: ['id', 'name', 'price', 'type']
+    });
 
-// REPLACE the old seatTotal line:
-// ❌ const seatTotal = seatRecords.reduce((sum, s) => sum + parseFloat(s.price || 0), 0);
+    // Price priority rule:
+    //   IF pickup_point_price EXISTS AND pickup_point_price < seat_price
+    //   THEN use pickup_point_price  (user gets cheaper boarding-point rate)
+    //   ELSE use seat_price          (car base price)
+    const basePricePerSeat  = parseFloat(car?.pricePerSeat || 0);
+    const pickupPointPrice  = pickupPoint?.price != null ? parseFloat(pickupPoint.price) : null;
+    const effectivePricePerSeat = (pickupPointPrice !== null && pickupPointPrice < basePricePerSeat)
+      ? pickupPointPrice
+      : basePricePerSeat;
 
-// ✅
-const seatTotal = effectivePricePerSeat * seatRecords.length;
+    const seatTotal = effectivePricePerSeat * seatRecords.length;
 
     let extrasTotal = 0;
     const breakdown = { seatTotal, extras: [], subtotal: 0, coupon: null };
@@ -234,6 +237,21 @@ const seatTotal = effectivePricePerSeat * seatRecords.length;
     let booking;
 
     try {
+        // ── Race condition fix: lock the row ──────────────────────────────
+  const freshTrip = await Trip.findOne({
+    where: { id: tripId },
+    lock: t.LOCK.UPDATE,
+    transaction: t
+  });
+
+  if (!freshTrip || freshTrip.availableSeats == null) {
+    throw new BadRequest('Trip not found');
+  }
+  if (freshTrip.availableSeats < selectedSeats.length) {
+    throw new BadRequest(
+      `Only ${freshTrip.availableSeats} seat(s) available, you requested ${selectedSeats.length}`
+    );
+  }
       const bookingId = await generateNextBookingId();
 
       booking = await Booking.create({
@@ -283,11 +301,22 @@ const seatTotal = effectivePricePerSeat * seatRecords.length;
         }, { transaction: t });
         paymentSessionId = paymentResult.payment_session_id;
       }
+await Trip.decrement('availableSeats', {
+    by: seatRecords.length,
+    where: { id: tripId },
+    transaction: t   // ← transaction pass karo
+  });
 
       await t.commit();
+
+      // Decrement available seats counter after successful commit
+      // await Trip.decrement('availableSeats', { by: seatRecords.length, where: { id: tripId } });
+
       return formatBookingResponse(booking, paymentSessionId);
     } catch (error) {
       await t.rollback();
+        console.error('[initiateBooking] Error:', error.message, error.stack);
+
       throw error;
     }
   },
@@ -307,8 +336,13 @@ const seatTotal = effectivePricePerSeat * seatRecords.length;
     if (!user) throw new BadRequest('User not found');
 
     const trip = await validateTripAndDate(tripId, journeyDate);
+const carModes = trip.car?.availableModes || [];
+const isCabinEligible =
+  trip.car?.cabType === 'cabin' ||
+  trip.car?.bookingMode === 'sharing_and_cabin' ||
+  carModes.includes('cabin');
 
-    if (trip.Car?.cabType !== 'cabin') {
+    if (!isCabinEligible) {
       throw new BadRequest('This trip is not a cabin cab.');
     }
 
@@ -324,31 +358,36 @@ const seatTotal = effectivePricePerSeat * seatRecords.length;
     if (existingCabinBooking) {
       throw new BadRequest(`Cabin ${cabinNumber} is already booked for this date`);
     }
-    // ✅ AFTER — respect pickup point price if it has one
     const pickupPt = await PickupPoint.findByPk(pickupPointId, {
       attributes: ['id', 'name', 'price', 'type']
     });
 
-    // Price per cabin:
-    // 1. Pickup point has fixed price → use it (metro overrides cabin base price too)
-    // 2. Fall back to car.pricePerCabin
-    const effectivePricePerCabin =
-      pickupPt?.price != null
-        ? parseFloat(pickupPt.price)
-        : parseFloat(trip.Car?.pricePerCabin || 0);
+    // Price priority rule (same as sharing):
+    //   IF pickup_point_price EXISTS AND pickup_point_price < cabin_price
+    //   THEN use pickup_point_price
+    //   ELSE use car.pricePerCabin
+    const basePricePerCabin  = parseFloat(trip.car?.pricePerCabin || 0);
+    // const pickupPtPrice      = pickupPt?.price != null ? parseFloat(pickupPt.price) : null;
+    // const effectivePricePerCabin = (pickupPtPrice !== null && pickupPtPrice < basePricePerCabin)
+    //   ? pickupPtPrice
+    //   : basePricePerCabin;
+    const effectivePricePerCabin = basePricePerCabin;  // always use car's cabin price
+
 
     const bookedCabins = parseInt(cabinNumber);   // how many cabins selected
-    const expectedTotal = effectivePricePerCabin * bookedCabins;
+    // const expectedTotal = effectivePricePerCabin * bookedCabins;
+    const expectedTotal = effectivePricePerCabin * 1;  // hamesha 1 cabin book hoti hai ek baar mein
+
 
     if (Math.abs(parseFloat(totalAmount) - expectedTotal) > 0.01) {
       throw new BadRequest(
-        `Cabin price mismatch. Expected ₹${expectedTotal} ` +
-        `(${bookedCabins} cabin(s) × ₹${effectivePricePerCabin})`
-      );
+  `Cabin price mismatch. Expected ₹${expectedTotal} ` +
+  `(1 cabin × ₹${effectivePricePerCabin})`
+);
     }
 
     // Get seats in this cabin
-    const capacity     = parseInt(cabinCapacity || trip.Car?.cabinCapacity || 1);
+    const capacity     = parseInt(cabinCapacity || trip.car?.cabinCapacity || 1);
     const cabinIndex   = parseInt(cabinNumber) - 1;
     const startIndex   = cabinIndex * capacity;
 
@@ -365,6 +404,22 @@ const seatTotal = effectivePricePerSeat * seatRecords.length;
     let booking;
 
     try {
+       // ── Race condition fix + availability check ───────────────────────
+  const freshTrip = await Trip.findOne({
+    where: { id: tripId },
+    lock: t.LOCK.UPDATE,
+    transaction: t
+  });
+
+  if (!freshTrip) throw new BadRequest('Trip not found');
+
+  const seatsNeeded = freshTrip.seatsPerCabinSnapshot || capacity;
+
+  if (freshTrip.availableSeats == null || freshTrip.availableSeats < seatsNeeded) {
+    throw new BadRequest(
+      `Not enough seats for cabin booking. Available: ${freshTrip.availableSeats ?? 0}, needed: ${seatsNeeded}`
+    );
+  }
       const bookingId = await generateNextBookingId();
 
       booking = await Booking.create({
@@ -423,8 +478,16 @@ const seatTotal = effectivePricePerSeat * seatRecords.length;
         }, { transaction: t });
         paymentSessionId = paymentResult.payment_session_id;
       }
+      // ── Decrement INSIDE transaction ──────────────────────────────────
+  const cabinSeatsCount = freshTrip.seatsPerCabinSnapshot || capacity;
+  await Trip.decrement('availableSeats', {
+    by: cabinSeatsCount,
+    where: { id: tripId },
+    transaction: t   // ← transaction pass karo
+  });
 
       await t.commit();
+
       return formatBookingResponse(booking, paymentSessionId);
 
     } catch (error) {
@@ -489,10 +552,14 @@ initiatePersonalizeBooking: async (bookingData) => {
 
   // ── Validate trip and date ───────────────────────────────────────────────────
   const trip = await validateTripAndDate(tripId, journeyDate);
+const carModes = trip.car?.availableModes || [];
+const isPersonalizeEligible = 
+  trip.car?.cabType === 'personalize' ||
+  carModes.includes('personalize');
 
-  if (trip.Car?.cabType !== 'personalize') {
-    throw new BadRequest('This trip is not a personalize cab.');
-  }
+if (!isPersonalizeEligible) {
+  throw new BadRequest('This trip is not a personalize cab.');
+}
 
   if (trip.isFullyBooked) {
     throw new BadRequest('This trip is already fully booked');
@@ -511,17 +578,10 @@ initiatePersonalizeBooking: async (bookingData) => {
     throw new BadRequest('This car is already reserved for the selected date');
   }
 
-  // ── Passenger count validation ────────────────────────────────────────────────
-  const paxCount   = parseInt(passengerCount);
-  const totalSeats = trip.Car?.totalSeats || 0;
-  if (paxCount > totalSeats) {
-    throw new BadRequest(
-      `Passenger count (${paxCount}) exceeds car capacity (${totalSeats} seats)`
-    );
-  }
+  const paxCount = parseInt(passengerCount);
+  const totalSeats = trip.car?.totalSeats || 0;
 
-  // ── Price validation ──────────────────────────────────────────────────────────
-  const carBasePrice   = parseFloat(trip.Car?.pricePerCar || 0);
+  const carBasePrice = parseFloat(trip.car?.pricePerCar || 0);
   const gstAmount      = parseFloat(gst      || 0);
   const discountAmount = parseFloat(discount || 0);
 
@@ -789,19 +849,23 @@ initiatePersonalizeBooking: async (bookingData) => {
     };
   },
 
-  // ── Admin: all bookings ────────────────────────────────────────────────────
-  getBookingList: async (userId = null) => {
+  // ── Admin: all bookings ─────────────────────��──────────────────────────────
+  getBookingList: async (userId = null, { page = 1, limit = 10 } = {}) => {
     const where = {};
     if (userId) where.userId = parseInt(userId);
 
-    const bookings = await Booking.findAll({
+    const parsedPage  = parseInt(page,  10);
+    const parsedLimit = parseInt(limit, 10);
+    const offset      = (parsedPage - 1) * parsedLimit;
+
+    const { count, rows: bookings } = await Booking.findAndCountAll({
       where,
       include: [
         { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNo'] },
         {
           model: Trip, as: 'trip',
           include: [
-            { model: Car,           as: 'Car',           attributes: ['id', 'carName', 'carType', 'cabType', 'registrationNumber'] },
+            { model: Car,           as: 'car',           attributes: ['id', 'carName', 'carType', 'cabType', 'registrationNumber'] },
             { model: StartLocation, as: 'startLocation', attributes: ['id', 'name'] },
             { model: EndLocation,   as: 'endLocation',   attributes: ['id', 'name'] }
           ]
@@ -809,10 +873,13 @@ initiatePersonalizeBooking: async (bookingData) => {
         { model: PickupPoint, as: 'pickupPoint', attributes: ['id', 'name'] },
         { model: DropPoint,   as: 'dropPoint',   attributes: ['id', 'name'] }
       ],
-      order: [['created_at', 'DESC']]
+      order:  [['created_at', 'DESC']],
+      limit:  parsedLimit,
+      offset,
+      distinct: true,
     });
 
-    return bookings.map(b => ({
+    const data = bookings.map(b => ({
       id:              b.id,
       bookingId:       b.bookingId,
       bookingType:     b.bookingType,
@@ -834,16 +901,26 @@ initiatePersonalizeBooking: async (bookingData) => {
       } : null,
       trip: b.trip ? {
         route:   `${b.trip.startLocation?.name || ''} → ${b.trip.endLocation?.name || ''}`,
-        car:     b.trip.Car?.carName || null,
-        cabType: b.trip.Car?.cabType || null,
+        car:     b.trip.car?.carName || null,
+        cabType: b.trip.car?.cabType || null,
       } : null,
       pickupPoint: b.pickupPoint?.name || null,
       dropPoint:   b.dropPoint?.name   || null,
       createdAt:   b.createdAt,
     }));
+
+    return {
+      data,
+      pagination: {
+        total:      count,
+        page:       parsedPage,
+        limit:      parsedLimit,
+        totalPages: Math.ceil(count / parsedLimit),
+      },
+    };
   },
 
-  // ── Cancel booking ─────────────────────────────────────────────────────────
+  // ─��� Cancel booking ─────────────────────────────────────────────────────────
 cancelBooking: async (bookingId, userId) => {
   const booking = await Booking.findByPk(bookingId, {
     include: [{ model: Trip, as: 'trip' }],

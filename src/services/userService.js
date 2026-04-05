@@ -230,8 +230,27 @@ const userService = {
     return { success: true, message: 'Password set successfully' };
   },
 
-  getAllUsers: async () => {
-    return await User.findAll({where: {isVerified: true,role: 'user'}});
+  getAllUsers: async ({ page = 1, limit = 10 } = {}) => {
+    const parsedPage  = parseInt(page,  10);
+    const parsedLimit = parseInt(limit, 10);
+    const offset      = (parsedPage - 1) * parsedLimit;
+
+    const { count, rows } = await User.findAndCountAll({
+      where:  { isVerified: true, role: 'user' },
+      limit:  parsedLimit,
+      offset,
+      order:  [['created_at', 'DESC']],
+    });
+
+    return {
+      data: rows,
+      pagination: {
+        total:      count,
+        page:       parsedPage,
+        limit:      parsedLimit,
+        totalPages: Math.ceil(count / parsedLimit),
+      },
+    };
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -262,7 +281,7 @@ getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
           model: Trip,
           as: 'trip',
           include: [
-            { model: Car,           as: 'Car'           },
+            { model: Car,           as: 'car'           },
             { model: StartLocation, as: 'startLocation' },
             { model: EndLocation,   as: 'endLocation'   },
           ],
@@ -367,7 +386,7 @@ switch (booking.bookingStatus) {
         isUpcoming,                                  // ← frontend uses this to split
         journeyDate:   journeyDateStr,               // clean YYYY-MM-DD string
         journeyTime:   booking.journeyTime || null,
-        cabType:       `${trip.Car?.carType || ''} (${trip.Car?.carName || ''}-${trip.Car?.carUniqueNumber || ''})`,
+        cabType:       `${trip.car?.carType || ''} (${trip.car?.carName || ''}-${trip.car?.carUniqueNumber || ''})`,
         date:          startTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
         time:          startTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
         startLocation: trip.startLocation?.name || 'Start',

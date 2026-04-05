@@ -80,20 +80,9 @@ const userController = {
   // @desc    Get all users (Admin only)
   // @access  Private/Admin
   getUsers: asyncHandler(async (req, res) => {
-    // Check if user is admin
-    // if (req.user.role !== 'admin') {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: 'Not authorized to access this route'
-    //   });
-    // }
-    
-    const users = await userService.getAllUsers();
-    res.status(200).json({
-      success: true,
-      count: users.length,
-      data: users
-    });
+    const { page = 1, limit = 10 } = req.query;
+    const { data, pagination } = await userService.getAllUsers({ page, limit });
+    res.status(200).json({ success: true, data, pagination });
   }),
 
   // POST /api/users/forgot-password

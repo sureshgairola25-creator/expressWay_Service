@@ -75,12 +75,8 @@ const tripController = {
   });
 }),
   getAllTrips: asyncHandler(async (req, res) => {
-    const trips = await tripService.getAllTrips(req.query);
-    res.status(200).json({
-      success: true,
-      count: trips.length,
-      data: trips
-    });
+    const { data, pagination } = await tripService.getAllTrips(req.query);
+    res.status(200).json({ success: true, data, pagination });
   }),
 
   getTripById: asyncHandler(async (req, res) => {
@@ -151,7 +147,18 @@ deleteTripGroup: asyncHandler(async (req, res) => {
 
   searchTrips: asyncHandler(async (req, res) => {
     const trips = await tripService.searchTrips(req.query);
-    res.status(200).json({ success: true, data: trips });
+    if (trips && trips.error) {
+      return res.status(400).json({ success: false, message: trips.message });
+    }
+    res.status(200).json({ success: true, count: trips.length, data: trips });
+  }),
+
+  getDepartureTimes: asyncHandler(async (req, res) => {
+    const result = await tripService.getDepartureTimes(req.query);
+    if (result && result.error) {
+      return res.status(400).json({ success: false, message: result.message });
+    }
+    res.status(200).json({ success: true, data: result });
   }),
    searchPersonalizeTrips: asyncHandler(async (req, res) => {
     const result = await tripService.searchPersonalizeTrips(req.query);
@@ -173,6 +180,20 @@ deleteTripGroup: asyncHandler(async (req, res) => {
 
     const seats = await tripService.getSeatsForTrip(tripId, journeyDate);
     res.status(200).json({ success: true, data: seats });
+  }),
+
+  calculatePrice: asyncHandler(async (req, res) => {
+    const { tripId, bookingMode, seatCount } = req.query;
+
+    if (!tripId || !bookingMode) {
+      return res.status(400).json({ success: false, message: 'tripId and bookingMode are required' });
+    }
+    if (!['seat', 'cabin'].includes(bookingMode)) {
+      return res.status(400).json({ success: false, message: 'bookingMode must be "seat" or "cabin"' });
+    }
+
+    const result = await tripService.calculatePrice({ tripId, bookingMode, seatCount });
+    res.status(200).json({ success: true, data: result });
   }),
 };
 

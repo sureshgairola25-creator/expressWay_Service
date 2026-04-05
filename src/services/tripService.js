@@ -193,20 +193,31 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
 
       const duration = calculateDuration(startDt, endDt);
 
+      // Derive booking mode for this car (support legacy cars without bookingMode)
+      const bookingModeSnap = car.bookingMode || (
+        car.cabType === 'personalize' ? 'personalized' : 'sharing_and_cabin'
+      );
+      const isPersonalized = bookingModeSnap === 'personalized';
+
       const tripToCreate = {
-        startLocationId: tripData.startLocationId,
-        endLocationId:   tripData.endLocationId,
-        pickupPoints:    tripData.pickupPoints,
-        dropPoints:      tripData.dropPoints,
-        carId:           tripData.carId,
-        startTime:       startDt,
-        endTime:         endDt,
+        startLocationId:      tripData.startLocationId,
+        endLocationId:        tripData.endLocationId,
+        pickupPoints:         tripData.pickupPoints,
+        dropPoints:           tripData.dropPoints,
+        carId:                tripData.carId,
+        startTime:            startDt,
+        endTime:              endDt,
         duration,
-        status:          tripData.status ?? true,
-        isRecurring:     tripData.isRecurring ?? true,
-        repeatType:      tripData.repeatType  ?? 'daily',
-        meals:           meals.length > 0 ? meals : null,
-        tripGroupId,     // ← links all trips in this batch
+        status:               tripData.status ?? true,
+        isRecurring:          tripData.isRecurring ?? true,
+        repeatType:           tripData.repeatType  ?? 'daily',
+        meals:                meals.length > 0 ? meals : null,
+        tripGroupId,
+        // ── Seat inventory snapshots (frozen at creation time) ─────────────
+        bookingModeSnapshot:  bookingModeSnap,
+        totalSeatsSnapshot:   car.totalSeats || null,
+        seatsPerCabinSnapshot: isPersonalized ? null : (car.cabinCapacity || null),
+        availableSeats:       isPersonalized ? 1 : (car.totalSeats || null),
       };
 
       const trip = await tripService.createTrip(tripToCreate, { transaction });
@@ -231,8 +242,12 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
 },
 
   getAllTrips: async (query = {}) => {
-    const { pickupPoint, dropPoint, date, ...otherFilters } = query;
+    const { pickupPoint, dropPoint, date, page = 1, limit = 10, ...otherFilters } = query;
     const where = { ...otherFilters };
+
+    const parsedPage  = parseInt(page,  10);
+    const parsedLimit = parseInt(limit, 10);
+    const offset      = (parsedPage - 1) * parsedLimit;
 
     if (date) {
       const startOfDay = new Date(date);
@@ -242,29 +257,37 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
       where.startTime = { [Op.between]: [startOfDay, endOfDay] };
     }
 
-    const tripIds = await Trip.findAll({
+    const { count, rows: idRows } = await Trip.findAndCountAll({
       where,
       attributes: ['id'],
-      raw: true
-    }).then(trips => trips.map(trip => trip.id));
+      order: [['created_at', 'DESC']],
+      limit:  parsedLimit,
+      offset,
+      raw: true,
+    });
 
-    if (tripIds.length === 0) return [];
+    const tripIds = idRows.map(trip => trip.id);
+
+    if (tripIds.length === 0) {
+      return {
+        data: [],
+        pagination: { total: count, page: parsedPage, limit: parsedLimit, totalPages: Math.ceil(count / parsedLimit) },
+      };
+    }
 
     const trips = await Trip.findAll({
       where: { id: { [Op.in]: tripIds } },
       include: [
-        {
-          model: Car,
-          // Include all new pricing fields for admin display
-          attributes: [
-'id','carName','carType','totalSeats',
-'registrationNumber','cabType',
-'pricePerSeat','pricePerCabin',
-'cabinCapacity','totalCabins',
-'pricePerCar','imageUrl'
-],
-          required: true,
-        },
+      {
+  model: Car,
+  as: 'car',          // ← match karo model association ke alias se
+  attributes: ['id','carName','carType','totalSeats',
+    'registrationNumber','cabType',
+    'pricePerSeat','pricePerCabin',
+    'cabinCapacity','totalCabins',
+    'pricePerCar','imageUrl'],
+  required: true,
+},
 
 {
   model: StartLocation,
@@ -280,7 +303,9 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
 }
       ],
       attributes: ['id', 'pickupPoints', 'dropPoints','startLocationId',
-'endLocationId', 'startTime', 'endTime', 'duration', 'status','tripGroupId', 'created_at', 'updated_at'],
+'endLocationId', 'startTime', 'endTime', 'duration', 'status','tripGroupId',
+'availableSeats', 'totalSeatsSnapshot', 'seatsPerCabinSnapshot', 'bookingModeSnapshot',
+'created_at', 'updated_at'],
       order: [['created_at', 'DESC']]
     });
 
@@ -324,11 +349,27 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
         }) : []
       ]);
 
-      const availableSeats = seats.filter(s => !s.isBooked).length;
+      // Use the live counter if present, fall back to seat-record count for legacy trips
+      const availableSeats = trip.availableSeats != null
+        ? trip.availableSeats
+        : seats.filter(s => !s.isBooked).length;
+
+      // Derived cabin count — never stored, always computed
+const seatsPerCabin = trip.seatsPerCabinSnapshot;
+const availableCabins = (trip.bookingModeSnapshot === 'sharing_and_cabin' && seatsPerCabin > 0)
+  ? Math.floor(availableSeats / seatsPerCabin)
+  : null;
+
+  // Availability flags
+const canBookSeat = availableSeats > 0;
+const canBookCabin = (
+  trip.bookingModeSnapshot === 'sharing_and_cabin' &&
+  seatsPerCabin > 0 &&
+  availableSeats >= seatsPerCabin
+);
 
       // Price shown in list is derived from car
-      const displayPrice = getDisplayPrice(trip.Car);
-
+      const displayPrice = getDisplayPrice(trip.car);
       if (pickupPoint && !pickupPoints.some(p => p.id == pickupPoint)) return null;
       if (dropPoint && !dropPoints.some(p => p.id == dropPoint)) return null;
 
@@ -345,12 +386,20 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
         dropPoints: dropPoints.map(d => ({
           id: d.id, name: d.name, type: 'drop', endLocation: d.EndLocation
         })),
-        carInfo: trip.Car,
+        carInfo: trip.car,
         startTime: trip.startTime,
         endTime: trip.endTime,
         duration: trip.duration,
         status: trip.status,
         availableSeats,
+        availableCabins,  
+        canBookSeat,
+        canBookCabin,
+        bookingMode: trip.bookingModeSnapshot, 
+        // derived: floor(availableSeats / seatsPerCabinSnapshot)
+        totalSeatsSnapshot:     trip.totalSeatsSnapshot,
+        seatsPerCabinSnapshot:  trip.seatsPerCabinSnapshot,
+        bookingModeSnapshot:    trip.bookingModeSnapshot,
         seatsInfo: seats,
         displayPrice,           // price to show in UI
         created_at: trip.created_at,
@@ -359,12 +408,17 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
     }));
 
      const filtered = processedTrips.filter(Boolean);
-
+const visible = filtered.filter(trip => {
+  if (trip.bookingModeSnapshot === 'personalized') {
+    return trip.availableSeats > 0;  // hide if already booked
+  }
+  return true;
+});
   // ── Group trips by tripGroupId ─────────────────────────────────────────
   const groups   = {};
   const ungrouped = [];
 
-  for (const trip of filtered) {
+  for (const trip of visible) {
     if (trip.tripGroupId) {
       if (!groups[trip.tripGroupId]) {
         groups[trip.tripGroupId] = { ...trip, timings: [trip.startTime] };
@@ -381,8 +435,18 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
     }
   }
 
-  return [...Object.values(groups), ...ungrouped]
+  const data = [...Object.values(groups), ...ungrouped]
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  return {
+    data,
+    pagination: {
+      total:      count,
+      page:       parsedPage,
+      limit:      parsedLimit,
+      totalPages: Math.ceil(count / parsedLimit),
+    },
+  };
 },
 
   getTripById: async (id) => {
@@ -390,14 +454,28 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
       include: [
         {
           model: Car,
+          as:"car",
           attributes: [
             'id', 'carName', 'carType', 'totalSeats', 'registrationNumber',
             'cabType', 'pricePerSeat', 'pricePerCabin', 'cabinCapacity',
             'totalCabins', 'pricePerCar', 'imageUrl'
           ]
-        }
+        },
+        {
+    model: StartLocation,   // ← add karo
+    as: 'startLocation',
+    attributes: ['id', 'name'],
+    required: false
+  },
+  {
+    model: EndLocation,     // ← add karo
+    as: 'endLocation',
+    attributes: ['id', 'name'],
+    required: false
+  }
       ],
-      attributes: ['id', 'pickupPoints', 'dropPoints', 'startTime', 'endTime', 'duration', 'status', 'meals', 'is_fully_booked']
+      attributes: ['id', 'pickupPoints', 'dropPoints', 'startLocationId', 'endLocationId',
+  'startTime', 'endTime', 'duration', 'status', 'meals', 'is_fully_booked']
     });
 
     if (!trip) throw new NotFound('Trip not found');
@@ -433,23 +511,25 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
     ]);
 
     const availableSeats = seats.filter(s => !s.isBooked).length;
-    const displayPrice = getDisplayPrice(trip.Car);
+    const displayPrice = getDisplayPrice(trip.car);
 
     const result = {
       ...trip.get({ plain: true }),
-      pickupPoints: pickupPoints.map(p => ({
-        id: p.id, name: p.name, type: 'pickup', startLocation: p.StartLocation
-      })),
-      dropPoints: dropPoints.map(d => ({
-        id: d.id, name: d.name, type: 'drop', endLocation: d.EndLocation
-      })),
-      carInfo: trip.Car,
+       startLocation: trip.startLocation || null,   // ← add karo
+  endLocation:   trip.endLocation   || null,   // ← add karo
+  pickupPoints: pickupPoints.map(p => ({
+    id: p.id, name: p.name, type: 'pickup', startLocation: p.StartLocation
+  })),
+  dropPoints: dropPoints.map(d => ({
+    id: d.id, name: d.name, type: 'drop', endLocation: d.EndLocation
+  })),
+      carInfo: trip.car,
       availableSeats,
       displayPrice,
       seatsInfo: seats
     };
 
-    if (result.Car) delete result.Car;
+    if (result.car) delete result.car;
 
     return result;
   },
@@ -811,17 +891,25 @@ searchTrips: async (queryParams = {}) => {
   try {
     let {
       startLocation, endLocation, date, pickupPoint, dropPoint,
-      minPrice, maxPrice, minSeats, timeRange, sortBy
+      minPrice, maxPrice, minSeats, timeRange, sortBy,
+      departure_time, ride_type
     } = queryParams;
 
     // ── Safe sanitize — query params are strings but guard anyway ────────────
     const toStr = (v) => (v !== undefined && v !== null ? String(v).trim() : null);
 
-    timeRange = toStr(timeRange) || null;
-    sortBy    = toStr(sortBy)    || null;
-    minPrice  = toStr(minPrice)  || null;
-    maxPrice  = toStr(maxPrice)  || null;
-    minSeats  = toStr(minSeats)  || null;
+    timeRange      = toStr(timeRange)      || null;
+    sortBy         = toStr(sortBy)         || null;
+    minPrice       = toStr(minPrice)       || null;
+    maxPrice       = toStr(maxPrice)       || null;
+    minSeats       = toStr(minSeats)       || null;
+    departure_time = toStr(departure_time) || null;  // "06:00" or "06:00 AM"
+    ride_type      = toStr(ride_type)      || null;  // "sharing" | "cabin"
+
+    // Validate ride_type
+    if (ride_type && !['sharing', 'cabin'].includes(ride_type)) {
+      return { error: true, message: 'ride_type must be "sharing" or "cabin"' };
+    }
 
     // ── Validate date ────────────────────────────────────────────────────────
     if (!date || String(date).trim() === '') {
@@ -845,7 +933,7 @@ searchTrips: async (queryParams = {}) => {
 
     // ── ✅ FIX 1: Exclude personalize trips from this API ────────────────────
     // Personalize has its own endpoint: GET /trips/search-personalize
-    where['$Car.cab_type$'] = { [Op.in]: ['sharing', 'cabin'] };
+    // where['$Car.cab_type$'] = { [Op.in]: ['sharing', 'cabin'] };
 
     // ── Fetch trips ──────────────────────────────────────────────────────────
     const trips = await Trip.findAll({
@@ -853,15 +941,17 @@ searchTrips: async (queryParams = {}) => {
       include: [
         {
           model: Car,
+                as: 'car',        // ← yeh add karo
           attributes: [
             'id', 'carName', 'carType', 'class', 'totalSeats',
             'carUniqueNumber', 'registrationNumber',
             'cabType', 'pricePerSeat', 'pricePerCabin',
-            'cabinCapacity', 'totalCabins', 'pricePerCar', 'imageUrl'
+            'cabinCapacity', 'totalCabins', 'pricePerCar', 'imageUrl',
+            'availableModes', 'vehicleCategory'
           ],
           required: true,
-          // ✅ Also filter at join level for safety
-          where: { cabType: { [Op.in]: ['sharing', 'cabin'] } },
+          // Broad filter: always exclude personalize — ride_type refinement done in JS loop
+          // where: { cabType: { [Op.in]: ['sharing', 'cabin'] } },
         },
         {
           model: Seat,
@@ -895,15 +985,24 @@ searchTrips: async (queryParams = {}) => {
       return items.map(p => ({ id: p.id, name: p.name }));
     }
 
-    // ── ✅ FIX 2: Correct displayPrice per cabType ───────────────────────────
-    // Sharing → pricePerSeat, Cabin → pricePerCabin
-    // This is what price filter compares against
-    function getDisplayPrice(car) {
+    // ── Correct base price per cabType or requested ride_type ───────────────
+    // ride_type overrides cabType when a vehicle supports multiple modes
+    function getBasePrice(car, requestedRideType = null) {
       if (!car) return 0;
-      if (car.cabType === 'cabin') {
-        return parseFloat(car.pricePerCabin || car.pricePerSeat || 0);
+      const effectiveType = requestedRideType || car.cabType;
+      if (effectiveType === 'cabin')      return parseFloat(car.pricePerCabin || car.pricePerSeat || 0);
+      if (effectiveType === 'personalize') return parseFloat(car.pricePerCar || 0);
+      return parseFloat(car.pricePerSeat || 0); // sharing (default)
+    }
+
+    // ── Resolve effective modes for a car ────────────────────────────────────
+    // availableModes takes priority over cabType for multi-mode vehicles
+    function getCarModes(car) {
+      if (!car) return [];
+      if (Array.isArray(car.availableModes) && car.availableModes.length > 0) {
+        return car.availableModes;
       }
-      return parseFloat(car.pricePerSeat || 0);
+      return car.cabType ? [car.cabType] : [];
     }
 
     const filteredTrips = [];
@@ -920,6 +1019,26 @@ searchTrips: async (queryParams = {}) => {
         if (searchDate < tripDateStr) continue;   // before trip start
       } else {
         if (tripDateStr !== searchDate) continue;  // non-recurring: exact match
+      }
+
+      // ── ride_type / availableModes filter ─────────────────────────────────
+      // Vehicles with availableModes=["sharing","cabin"] can appear in either tab.
+      // Vehicles without availableModes fall back to cabType.
+      if (ride_type) {
+        const carModes = getCarModes(t.car);
+        if (!carModes.includes(ride_type)) continue;
+      }
+
+      // ── departure_time filter (HH:MM in IST) ─────────────────────────────
+      if (departure_time) {
+        const dt = new Date(t.startTime);
+        const istTotalMin = (dt.getUTCHours() * 60 + dt.getUTCMinutes() + 330) % 1440;
+        const istHH = Math.floor(istTotalMin / 60).toString().padStart(2, '0');
+        const istMM = (istTotalMin % 60).toString().padStart(2, '0');
+        const tripTimeHHMM = `${istHH}:${istMM}`;
+        // Accept "06:00" or "06:00 AM" / "6:00 AM" formats
+        const cleanDep = departure_time.replace(/\s*(AM|PM)$/i, '').trim().padStart(5, '0');
+        if (tripTimeHHMM !== cleanDep) continue;
       }
 
       // ── Fully booked check ────────────────────────────────────────────────
@@ -968,40 +1087,41 @@ searchTrips: async (queryParams = {}) => {
 
       const leftSeats = seatsInfo.filter(s => !s.isBooked);
 
-      // ── ✅ FIX 3: displayPrice correctly derived per cabType ───────────────
-      // const displayPrice = getDisplayPrice(t.Car);
+      // ── Price priority: seat_price OR cheaper pickup_price ───────────────
+      // Rule: use pickup_price only if it exists AND is less than base_price
       const startId = t.startLocationId || t.dataValues?.startLocationId;
-      let displayPrice = getDisplayPrice(t.Car);   // fallback
+      const basePrice = getBasePrice(t.car, ride_type);
+      let pickupOverridePrice = null;  // cheapest applicable pickup price
 
       if (startId) {
-        const defaultPickup = await PickupPoint.findOne({
+        const cheapestPickup = await PickupPoint.findOne({
           where: {
             startLocationId: startId,
-            isCityDefault: true,
-            status: 1,
-            price: { [Op.not]: null },
-            endLocationId: t.endLocationId,
+            isCityDefault:   true,
+            status:          1,
+            price:           { [Op.not]: null },
+            endLocationId:   t.endLocationId,
           },
-          
-          order: [['price', 'ASC']],   // cheapest default first
+          order: [['price', 'ASC']],
           raw: true,
         });
-        if (defaultPickup?.price) {
-          displayPrice = Math.min(
-            displayPrice,
-            parseFloat(defaultPickup.price)
-          );
+        if (cheapestPickup?.price) {
+          const pp = parseFloat(cheapestPickup.price);
+          // Only use pickup price if it is strictly cheaper than base price
+          if (pp < basePrice) pickupOverridePrice = pp;
         }
       }
 
-      // ── ✅ FIX 4: Price filter ─────────────────────────────────────────────
+      const displayPrice = pickupOverridePrice !== null ? pickupOverridePrice : basePrice;
+
+      // ── Price filter ──────────────────────────────────────────────────────
       if (minPrice && displayPrice < parseFloat(minPrice)) continue;
       if (maxPrice && displayPrice > parseFloat(maxPrice)) continue;
 
-      // ── ✅ FIX 5: minSeats filter ──────────────────────────────────────────
-      // For sharing: count available seats
-      // For cabin: count available cabins (totalCabins - bookedCabins)
-      const cabType = t.Car?.cabType;
+      // ── minSeats filter ───────────────────────────────────────────────────
+      // Sharing: count available seats; Cabin: count available cabin units
+      // Use effective cabType based on ride_type (for multi-mode vehicles)
+      const cabType = ride_type || t.car?.cabType;
       if (minSeats) {
         const minSeatsInt = parseInt(minSeats);
         if (cabType === 'cabin') {
@@ -1016,7 +1136,7 @@ searchTrips: async (queryParams = {}) => {
             attributes: ['cabinNumber']
           });
           const bookedCabins    = new Set(cabinBookings.map(b => b.cabinNumber)).size;
-          const availableCabins = (t.Car?.totalCabins || 0) - bookedCabins;
+          const availableCabins = (t.car?.totalCabins || 0) - bookedCabins;
           if (availableCabins < minSeatsInt) continue;
         } else {
           // Sharing: leftSeats count
@@ -1046,7 +1166,7 @@ searchTrips: async (queryParams = {}) => {
 
       // ── Pickup points — filtered by cabType ──────────────────────────────
     // ✅ REPLACE WITH — trip specific + startLocation defaults, no city logic
-const tripCabType  = t.Car?.cabType || 'sharing';
+const tripCabType  = t.car?.cabType || 'sharing';
 const idsToFetch   = pickupIdInt ? [pickupIdInt] : pickupIds;
 
 // 1. Trip-specific pickup points (assigned to this trip)
@@ -1111,7 +1231,8 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
   .map(p => ({
     id:            p.id,
     name:          p.name,
-    price:         p.price != null ? parseFloat(p.price) : getDisplayPrice(t.Car),
+    // price:         p.price != null ? parseFloat(p.price) : getDisplayPrice(t.car),
+      price:         p.price != null ? parseFloat(p.price) : parseFloat(t.car?.pricePerSeat || 0),
     description:   p.description   || null,
     meta:          p.meta          || null,
     isCityDefault: p.isCityDefault || false,
@@ -1124,14 +1245,7 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
         DropPoint
       );
 
-      // defaultPickups fetch ke baad
-console.log('=== PICKUP DEBUG ===');
-console.log('startLocationId:', t.startLocationId);
-console.log('tripCabType:', tripCabType);
-console.log('defaultPickups count:', defaultPickups.length);
-console.log('defaultPickups:', JSON.stringify(defaultPickups));
-console.log('specificPickups count:', specificPickups.length);
-console.log('merged count:', mergedPickupPoints.length);
+      // (debug logs removed)
 
       // ── Cabin booking info ────────────────────────────────────────────────
       let bookedCabinNumbers = [];
@@ -1148,12 +1262,13 @@ console.log('merged count:', mergedPickupPoints.length);
         bookedCabinNumbers = cabinBookings.map(b => b.cabinNumber);
       }
 
-      const totalCabins     = t.Car?.totalCabins || 0;
+      const totalCabins     = t.car?.totalCabins || 0;
       const availableCabins = cabType === 'cabin'
         ? totalCabins - new Set(bookedCabinNumbers).size
         : null;
 
       filteredTrips.push({
+        trip_id:        t.id,
         id:             t.id,
         startLocation:  t.startLocation,
         endLocation:    t.endLocation,
@@ -1169,22 +1284,33 @@ console.log('merged count:', mergedPickupPoints.length);
         dropPoints:     dropPointsArr,
         meals:          t.meals || [],
         carInfo: {
-          id:                 t.Car?.id,
-          name:               t.Car?.carName,
-          type:               t.Car?.carType,
-          class:              t.Car?.class,
-          totalSeats:         t.Car?.totalSeats,
-          registrationNumber: t.Car?.registrationNumber,
-          carUniqueNumber:    t.Car?.carUniqueNumber,
-          cabType:            t.Car?.cabType,
-          pricePerSeat:       t.Car?.pricePerSeat,
-          pricePerCabin:      t.Car?.pricePerCabin,
-          cabinCapacity:      t.Car?.cabinCapacity,
-          totalCabins:        t.Car?.totalCabins,
-          pricePerCar:        t.Car?.pricePerCar,
-          imageUrl:           t.Car?.imageUrl,
+          id:                 t.car?.id,
+          name:               t.car?.carName,
+          type:               t.car?.carType,
+          class:              t.car?.class,
+          totalSeats:         t.car?.totalSeats,
+          registrationNumber: t.car?.registrationNumber,
+          carUniqueNumber:    t.car?.carUniqueNumber,
+          cabType:            t.car?.cabType,
+          availableModes:     getCarModes(t.car),
+          vehicleCategory:    t.car?.vehicleCategory || null,
+          pricePerSeat:       t.car?.pricePerSeat  != null ? parseFloat(t.car.pricePerSeat)  : null,
+          pricePerCabin:      t.car?.pricePerCabin != null ? parseFloat(t.car.pricePerCabin) : null,
+          cabinCapacity:      t.car?.cabinCapacity,
+          totalCabins:        t.car?.totalCabins,
+          pricePerCar:        t.car?.pricePerCar   != null ? parseFloat(t.car.pricePerCar)   : null,
+          imageUrl:           t.car?.imageUrl,
         },
+        // ── Pricing fields (consistent across listing, vehicle selection, summary) ──
+        seatsPerCabinSnapshot: t.seatsPerCabinSnapshot || null,
+        seat_price:         t.car?.pricePerSeat  != null ? parseFloat(t.car.pricePerSeat)  : null,
+        cabin_price:        t.car?.pricePerCabin != null ? parseFloat(t.car.pricePerCabin) : null,
+        pickup_price:       pickupOverridePrice,   // null if no cheaper pickup exists
+        // final_display_price: pickup_price if cheaper, else seat/cabin price
+        final_display_price: displayPrice,
         displayPrice,
+        available_modes:    getCarModes(t.car),
+        requested_ride_type: ride_type || null,
         createdAt: t.createdAt,
         updatedAt: t.updatedAt,
       });
@@ -1210,43 +1336,66 @@ console.log('merged count:', mergedPickupPoints.length);
 },
  searchPersonalizeTrips : async (queryParams = {}) => {
   try {
-    // ── CHANGE 1: destructure carType ─────────────────────────────────────────
-    let { startLocation, endLocation, date, carType } = queryParams;
- 
+    // Params: startLocation, endLocation, date (required)
+    // vehicleCategory: "Compact" | "Executive" | "Family" | "Grand" (optional)
+    // carType: legacy filter kept for backward-compat (e.g. "Sedan")
+    let { startLocation, endLocation, date, carType, vehicleCategory } = queryParams;
+
     // ── 1. Validate required params ───────────────────────────────────────────
     if (!startLocation || !endLocation) {
       return { error: true, message: 'startLocation and endLocation are required' };
     }
- 
+
     if (!date || date.trim() === '') {
       return { error: true, message: 'Date is required. Use format YYYY-MM-DD' };
     }
- 
+
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(date.trim())) {
       return { error: true, message: 'Invalid date format. Use YYYY-MM-DD' };
     }
- 
+
     const parsedDate = new Date(date + 'T00:00:00.000Z');
     if (isNaN(parsedDate.getTime())) {
       return { error: true, message: 'Invalid date. Use YYYY-MM-DD' };
     }
- 
+
     const searchDate = date.trim();
- 
-    // ── CHANGE 2: build Car where clause dynamically ──────────────────────────
+
+    // ── 2. Build Car WHERE clause ─────────────────────────────────────────────
     const carWhere = { cabType: 'personalize' };
-    if (carType && carType.trim() !== '') {
-      // DB column is carType, values: 'Hatchback', 'Sedan', 'SUV', etc.
-      // Use Op.iLike for case-insensitive match, or just lowercase both sides:
-      carWhere.carType = carType.trim()
-        .replace(/^\w/, c => c.toUpperCase()); // 'sedan' → 'Sedan' to match DB casing
-      // If your DB stores lowercase, just use: carWhere.carType = carType.trim().toLowerCase();
+
+    // vehicleCategory filter (Compact / Executive / Family / Grand)
+    // Maps to the DB vehicleCategory column if set, otherwise falls back to carType
+    const categoryToCarTypes = {
+      'compact':   ['compact'],
+      'executive': ['executive'],
+      'family':    ['family'],
+      'grand':     ['grand'],
+    };
+
+    if (vehicleCategory && vehicleCategory.trim() !== '') {
+      const cat = vehicleCategory.trim();
+      const mappedTypes = categoryToCarTypes[cat];
+      if (mappedTypes) {
+        // Prefer vehicleCategory DB column; fall back to carType mapping
+        carWhere[Op.or] = [
+          { vehicleCategory: cat },
+          { carType: { [Op.in]: mappedTypes } },
+        ];
+      }
+    } else if (carType && carType.trim() !== '') {
+      // Legacy carType filter (kept for backward-compat)
+      // carWhere.carType = carType.trim().replace(/^\w/, c => c.toUpperCase());
+      // carWhere.carType = carType.trim().toLowerCase();
+      if (carType.includes(",")) {
+  carWhere.carType = {
+    [Op.in]: carType.split(",")
+  };
+}
     }
- 
-    console.log('[searchPersonalizeTrips] carWhere:', carWhere);
- 
-    // ── 2. Fetch trips ────────────────────────────────────────────────────────
+
+    // ── 3. Fetch trips ────────────────────────────────────────────────────────
     const trips = await Trip.findAll({
       where: {
         status:            true,
@@ -1256,11 +1405,12 @@ console.log('merged count:', mergedPickupPoints.length);
       include: [
         {
           model: Car,
-          where: carWhere,                    // ← dynamic — includes carType when sent
+          as :"car",
+          where: carWhere,
           attributes: [
             'id', 'carName', 'carType', 'class', 'totalSeats',
             'carUniqueNumber', 'registrationNumber',
-            'pricePerCar', 'imageUrl'
+            'pricePerCar', 'imageUrl', 'vehicleCategory', 'availableModes'
           ],
           required: true
         },
@@ -1286,32 +1436,22 @@ console.log('merged count:', mergedPickupPoints.length);
       order: [['start_time', 'ASC']]
     });
  
-    console.log(`[searchPersonalizeTrips] Total personalize trips found: ${trips.length}`);
  
     // ── 3. Filter loop — UNCHANGED from your original ─────────────────────────
     const availableTrips = [];
  
     for (const t of trips) {
  
-      console.log(t?.dataValues?.start_time);
- 
       if (!t?.dataValues?.start_time || isNaN(new Date(t?.dataValues?.start_time).getTime())) {
-        console.log(`[searchPersonalizeTrips] Skipping trip ${t.id} — invalid start_time`);
         continue;
       }
  
       const tripDateStr = new Date(t?.dataValues?.start_time).toISOString().split('T')[0];
  
       if (t.dataValues.is_recurring) {
-        if (searchDate < tripDateStr) {
-          console.log(`[searchPersonalizeTrips] Skipping trip ${t.id} — search date before trip start`);
-          continue;
-        }
+        if (searchDate < tripDateStr) continue;
       } else {
-        if (tripDateStr !== searchDate) {
-          console.log(`[searchPersonalizeTrips] Skipping trip ${t.id} — date mismatch`);
-          continue;
-        }
+        if (tripDateStr !== searchDate) continue;
       }
  
       const existingBooking = await Booking.findOne({
@@ -1324,10 +1464,7 @@ console.log('merged count:', mergedPickupPoints.length);
         attributes: ['id']
       });
  
-      if (existingBooking) {
-        console.log(`[searchPersonalizeTrips] Skipping trip ${t.id} — already booked for ${searchDate}`);
-        continue;
-      }
+      if (existingBooking) continue;
  
       const pickupIds = Array.isArray(t.dataValues.pickup_points)
         ? t.dataValues.pickup_points
@@ -1342,7 +1479,9 @@ console.log('merged count:', mergedPickupPoints.length);
         dropIds.length > 0   ? DropPoint.findAll({  where: { id: dropIds   }, attributes: ['id', 'name'] }) : []
       ]);
  
+      const carPrice = parseFloat(t.dataValues.car?.pricePerCar || 0);
       availableTrips.push({
+        trip_id:       t.id,
         id:            t.id,
         startLocation: t.dataValues.startLocation,
         endLocation:   t.dataValues.endLocation,
@@ -1354,23 +1493,28 @@ console.log('merged count:', mergedPickupPoints.length);
         pickupPoints:  pickupPoints.map(p => ({ id: p.id, name: p.name })),
         dropPoints:    dropPoints.map(d => ({ id: d.id, name: d.name })),
         carInfo: {
-          id:                 t.dataValues.Car?.id,
-          name:               t.dataValues.Car?.carName,
-          type:               t.dataValues.Car?.carType,
-          class:              t.dataValues.Car?.class,
-          totalSeats:         t.dataValues.Car?.totalSeats,
-          registrationNumber: t.dataValues.Car?.registrationNumber,
-          carUniqueNumber:    t.dataValues.Car?.carUniqueNumber,
+          id:                 t.dataValues.car?.id,
+          name:               t.dataValues.car?.carName,
+          type:               t.dataValues.car?.carType,
+          class:              t.dataValues.car?.class,
+          totalSeats:         t.dataValues.car?.totalSeats,
+          registrationNumber: t.dataValues.car?.registrationNumber,
+          carUniqueNumber:    t.dataValues.car?.carUniqueNumber,
           cabType:            'personalize',
-          pricePerCar:        t.dataValues.Car?.pricePerCar,
-          imageUrl:           t.dataValues.Car?.imageUrl,
+          vehicleCategory:    t.dataValues.car?.vehicleCategory || null,
+          availableModes:     ['personalize'],
+          pricePerCar:        carPrice,
+          imageUrl:           t.dataValues.car?.imageUrl,
         },
-        price:    parseFloat(t.dataValues.Car?.pricePerCar || 0),
+        price:               carPrice,
+        seat_price:          null,
+        cabin_price:         null,
+        final_display_price: carPrice,
+        pickup_price:        null,
         createdAt: t.dataValues.created_at,
       });
     }
  
-    console.log(`[searchPersonalizeTrips] Available trips after filtering: ${availableTrips.length}`);
  
     availableTrips.sort((a, b) => a.price - b.price);
  
@@ -1643,30 +1787,167 @@ const syncSeats = async (tripId, seatsInfo, carId, transaction) => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper: derive seat price from car based on cab type
+// Helper: derive seat price from car based on cab type or requested ride_type
+// rideType overrides cabType for multi-mode vehicles (availableModes)
 // ─────────────────────────────────────────────────────────────────────────────
-function getSeatPriceFromCar(car) {
+function getSeatPriceFromCar(car, rideType = null) {
   if (!car) return 0;
-  if (car.cabType === 'sharing')     return parseFloat(car.pricePerSeat)  || 0;
-  if (car.cabType === 'cabin')       return parseFloat(car.pricePerCabin) || 0;
-  if (car.cabType === 'personalize') return parseFloat(car.pricePerCar)   || 0;
+  const effectiveType = rideType || car.cabType;
+  if (effectiveType === 'sharing')     return parseFloat(car.pricePerSeat)  || 0;
+  if (effectiveType === 'cabin')       return parseFloat(car.pricePerCabin) || 0;
+  if (effectiveType === 'personalize') return parseFloat(car.pricePerCar)   || 0;
   return parseFloat(car.pricePerSeat) || 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: get the display price for a car (what to show user / use for sorting)
 // ─────────────────────────────────────────────────────────────────────────────
-function getDisplayPrice(car) {
+function getDisplayPrice(car, rideType = null) {
   if (!car) return 0;
-  if (car.cabType === 'sharing')     return parseFloat(car.pricePerSeat)  || 0;
-  if (car.cabType === 'cabin')       return parseFloat(car.pricePerCabin) || 0;
-  if (car.cabType === 'personalize') return parseFloat(car.pricePerCar)   || 0;
+  const effectiveType = rideType || car.cabType;
+  if (effectiveType === 'sharing')     return parseFloat(car.pricePerSeat)  || 0;
+  if (effectiveType === 'cabin')       return parseFloat(car.pricePerCabin) || 0;
+  if (effectiveType === 'personalize') return parseFloat(car.pricePerCar)   || 0;
   return parseFloat(car.pricePerSeat) || 0;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// getDepartureTimes
+// Returns available departure times for a route + ride_type combination.
+// Frontend clock-selector uses this to populate selectable time slots.
+//
+// GET /api/trips/departure-times
+//   ?startLocation=1&endLocation=2&ride_type=sharing&date=2026-04-03
+//
+// Returns: [{ value: "06:00", display: "06:00 AM" }, ...]
+// ─────────────────────────────────────────────────────────────────────────────
+tripService.getDepartureTimes = async (queryParams = {}) => {
+  try {
+    let { startLocation, endLocation, ride_type, date } = queryParams;
+
+    if (!startLocation || !endLocation) {
+      return { error: true, message: 'startLocation and endLocation are required' };
+    }
+
+    const searchDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date).trim()))
+      ? String(date).trim()
+      : new Date().toISOString().split('T')[0];
+
+    // DB-level broad filter; JS-level refines by availableModes
+    const carWhere = {};
+    if (ride_type === 'personalize') {
+      carWhere.cabType = 'personalize';
+    } else {
+      // sharing, cabin, or unspecified → exclude personalize
+      carWhere.cabType = { [Op.ne]: 'personalize' };
+    }
+
+    const trips = await Trip.findAll({
+      where: {
+        status:          true,
+        startLocationId: parseInt(startLocation),
+        endLocationId:   parseInt(endLocation),
+      },
+      include: [{
+        model: Car,
+        where: carWhere,
+        attributes: ['id', 'cabType', 'availableModes'],
+        required: true,
+      }],
+      attributes: ['id', 'startTime', 'isRecurring'],
+      order: [['startTime', 'ASC']],
+    });
+
+    const seenTimes = new Set();
+    const result = [];
+
+    for (const t of trips) {
+      if (!t.startTime || isNaN(new Date(t.startTime).getTime())) continue;
+
+      const tripDateStr = new Date(t.startTime).toISOString().split('T')[0];
+
+      // Date filter (recurring vs one-time)
+      if (t.isRecurring) {
+        if (searchDate < tripDateStr) continue;
+      } else {
+        if (tripDateStr !== searchDate) continue;
+      }
+
+      // ride_type filter via availableModes (or fallback to cabType)
+      if (ride_type) {
+        const modes = (Array.isArray(t.Car?.availableModes) && t.Car.availableModes.length > 0)
+          ? t.Car.availableModes
+          : [t.Car?.cabType];
+        if (!modes.includes(ride_type)) continue;
+      }
+
+      // Convert startTime to IST HH:MM
+      const dt = new Date(t.startTime);
+      const istTotalMin = (dt.getUTCHours() * 60 + dt.getUTCMinutes() + 330) % 1440;
+      const istH = Math.floor(istTotalMin / 60);
+      const istM = istTotalMin % 60;
+      const hh   = istH.toString().padStart(2, '0');
+      const mm   = istM.toString().padStart(2, '0');
+      const value = `${hh}:${mm}`;  // e.g. "06:00"
+
+      if (seenTimes.has(value)) continue;
+      seenTimes.add(value);
+
+      const period  = istH >= 12 ? 'PM' : 'AM';
+      const h12     = istH % 12 || 12;
+      const display = `${h12.toString().padStart(2, '0')}:${mm} ${period}`; // "06:00 AM"
+
+      result.push({ value, display });
+    }
+
+    return result;
+
+  } catch (err) {
+    console.error('[getDepartureTimes] Error:', err);
+    throw new Error('Failed to fetch departure times');
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// calculatePrice
+// Returns the correct price for a trip based on bookingMode and seatCount.
+// bookingMode = 'seat'  → price = seatPrice × seatCount
+// bookingMode = 'cabin' → price = seatPrice × seatsPerCabinSnapshot
+// ─────────────────────────────────────────────────────────────────────────────
+tripService.calculatePrice = async ({ tripId, bookingMode, seatCount }) => {
+  const trip = await Trip.findByPk(tripId, {
+    include: [{
+      model: Car,
+      as: 'car',
+      attributes: ['pricePerSeat', 'pricePerCabin', 'cabinCapacity'],
+    }],
+  });
+
+  if (!trip) throw new Error('Trip not found');
+
+  const car = trip.car;
+  const seatPrice = parseFloat(car?.pricePerSeat) || 0;
+  const seatsPerCabin = trip.seatsPerCabinSnapshot || car?.cabinCapacity || 1;
+
+  let price;
+  if (bookingMode === 'cabin') {
+    price = seatPrice * seatsPerCabin;
+  } else {
+    price = seatPrice * (parseInt(seatCount) || 1);
+  }
+
+  return {
+    price,
+    seatPrice,
+    seatsPerCabinSnapshot: seatsPerCabin,
+    bookingMode,
+    seatCount: parseInt(seatCount) || 1,
+  };
+};
+
 module.exports = tripService;
-// const { 
-//   Trip, 
+// const {
+//   Trip,
 //   Car, 
 //   Seat, 
 //   StartLocation, 

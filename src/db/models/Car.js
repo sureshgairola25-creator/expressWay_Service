@@ -83,6 +83,38 @@ imageUrl: {
   defaultValue: null,
   field: 'image_url',
 },
+// ── New booking model (source of truth for new cars) ───────────────────────
+// sharing_and_cabin : vehicle supports BOTH sharing AND cabin rides.
+//                     Cabins are ALWAYS derived: floor(totalSeats / cabinCapacity).
+//                     totalCabins is never stored.
+// personalized      : full-vehicle booking only.
+// NULL              : legacy car — derive intent from cabType / availableModes.
+bookingMode: {
+  type: DataTypes.ENUM('sharing_and_cabin', 'personalized'),
+  allowNull: true,
+  defaultValue: null,
+  field: 'booking_mode',
+  comment: 'sharing_and_cabin = sharing+cabin rides; personalized = full-vehicle only.',
+},
+// ── Multi-mode support: one vehicle can serve both sharing + cabin ──────────
+// e.g. availableModes = ["sharing", "cabin"]
+// NULL means use cabType only (backward-compatible)
+availableModes: {
+  type: DataTypes.JSON,
+  allowNull: true,
+  defaultValue: null,
+  field: 'available_modes',
+  comment: 'Ride modes this vehicle supports. NULL = use cabType only.'
+},
+// ── Category for personalized ride filtering ────────────────────────────────
+// Values: Compact, Executive, Family, Grand
+vehicleCategory: {
+  type: DataTypes.ENUM('Compact', 'Executive', 'Family', 'Grand'),
+  allowNull: true,
+  defaultValue: null,
+  field: 'vehicle_category',
+  comment: 'Category used to filter personalized rides.'
+},
 }, {
   tableName: 'Cars',
   timestamps: true,

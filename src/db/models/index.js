@@ -54,9 +54,10 @@ EndLocation.hasMany(Route, { foreignKey: 'endLocationId' });
 Route.belongsTo(StartLocation, { foreignKey: 'startLocationId' });
 Route.belongsTo(EndLocation, { foreignKey: 'endLocationId' });
 
-// Trip Associations
-Car.hasMany(Trip, { foreignKey: 'carId' });
-Trip.belongsTo(Car, { foreignKey: 'carId' });
+// // Trip Associations
+// AFTER
+Car.hasMany(Trip, { foreignKey: 'carId', as: 'trips' });
+Trip.belongsTo(Car, { foreignKey: 'carId', as: 'car' });
 
 // Trip-StartLocation Association
 StartLocation.hasMany(Trip, { 

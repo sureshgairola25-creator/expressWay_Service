@@ -95,8 +95,9 @@ const bookingController = {
   // ── GET /admin/bookings ───────────────────────────────────────────────────
   getBookingList: asyncHandler(async (req, res) => {
     const userId = req.query.userId ? parseInt(req.query.userId) : null;
-    const bookings = await bookingService.getBookingList(userId);
-    res.status(200).json({ success: true, data: bookings });
+    const { page = 1, limit = 10 } = req.query;
+    const { data, pagination } = await bookingService.getBookingList(userId, { page, limit });
+    res.status(200).json({ success: true, data, pagination });
   }),
 
   // ── PATCH /admin/bookings/:bookingId/payment-status ───────────────────────
