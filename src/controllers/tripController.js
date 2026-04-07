@@ -74,10 +74,15 @@ const tripController = {
       : 'Trip created successfully',
   });
 }),
-  getAllTrips: asyncHandler(async (req, res) => {
-    const { data, pagination } = await tripService.getAllTrips(req.query);
-    res.status(200).json({ success: true, data, pagination });
-  }),
+  // getAllTrips: asyncHandler(async (req, res) => {
+  //   const { data, pagination } = await tripService.getAllTrips(req.query);
+  //   res.status(200).json({ success: true, data, pagination });
+  // }),
+   getAllTrips :asyncHandler(async (req, res) => {
+  const { page = 1, limit = 10, ...query } = req.query;  // ← extract pagination
+  const result = await tripService.getAllTrips({ ...query, page, limit });
+  res.json({ success: true, ...result });  // spreads data + pagination
+}),
 
   getTripById: asyncHandler(async (req, res) => {
     const trip = await tripService.getTripById(req.params.id);
