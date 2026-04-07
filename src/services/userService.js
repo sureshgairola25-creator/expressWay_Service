@@ -7,6 +7,7 @@ const { OAuth2Client } = require('google-auth-library');
 const { sendEmail } = require('../lib/email');
 const { sendSMS } = require('../lib/sms');
 const { calculateDuration } = require('../utils/dateUtils');
+const { Op } = require('sequelize');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -273,8 +274,7 @@ getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
     const { count, rows: bookings } = await Booking.findAndCountAll({
       where: {
         userId,
-        // ✅ FIX 1: Include ALL booking statuses, not just "confirmed"
-        // bookingStatus: "confirmed"  ← was wrong, removed
+       bookingStatus: { [Op.ne]: 'expired' }
       },
       include: [
         {

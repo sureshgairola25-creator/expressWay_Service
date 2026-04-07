@@ -191,10 +191,14 @@ const carService = {
 
     // ── Legacy cabType fallback (existing cars without bookingMode) ────────
     if (cabType === 'sharing') {
+      if (!totalSeats || Number(totalSeats) <= 0)
+        throw new BadRequest('Total seats is required for sharing cab');
       if (!pricePerSeat || Number(pricePerSeat) <= 0)
         throw new BadRequest('Price per seat is required for sharing cab');
     }
     if (cabType === 'cabin') {
+      if (!totalSeats || Number(totalSeats) <= 0)
+        throw new BadRequest('Total seats is required for cabin cab');
       if (!pricePerCabin || Number(pricePerCabin) <= 0)
         throw new BadRequest('Price per cabin is required for cabin cab');
       if (!cabinCapacity || Number(cabinCapacity) <= 0)

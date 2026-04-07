@@ -11,7 +11,7 @@ const { sendWhatsApp, retryFailedNotifications } = require('../services/notifica
 // Finds bookings whose trip starts in the next 55–65 min window
 // and haven't had a reminder sent yet
 
-cron.schedule('*/60 * * * *', async () => {
+cron.schedule('*/10 * * * *', async () => {
   console.log('[ReminderJob] Running...');
   try {
     const now = new Date();
@@ -102,17 +102,37 @@ cron.schedule('*/15 * * * *', async () => {
   }
 });
 
-// Har 5 min mein expired bookings release karo
+// ✅ FIX — snake_case column names with Sequelize literal
 cron.schedule('*/5 * * * *', async () => {
-  await Booking.update(
-    { bookingStatus: 'expired' },
-    {
-      where: {
-        bookingStatus: 'initiated',
-        paymentExpiry: { [Op.lt]: new Date() }
-      }
-    }
-  );
-});
+  try {
+    const { literal } = require('sequelize');
 
-console.log('[Jobs] Reminder + retry cron jobs registered');
+    const [count] = await Booking.update(
+      { bookingStatus: 'expired' },
+      {
+        where: {
+          bookingStatus: 'initiated',
+          [Op.or]: [
+            // paymentExpiry set hai aur expire ho gayi
+            { paymentExpiry: { [Op.lt]: new Date() } },
+
+            // paymentExpiry NULL + booking 15 min purani (fallback)
+            // literal() use karo taaki Sequelize field mapping bypass ho
+            literal(
+              `(payment_expiry IS NULL AND created_at < '${
+                new Date(Date.now() - 15 * 60 * 1000)
+                  .toISOString()
+                  .slice(0, 19)
+                  .replace('T', ' ')
+              }')`
+            ),
+          ],
+        },
+      }
+    );
+
+    if (count > 0) console.log(`[Cron] Expired ${count} initiated bookings`);
+  } catch (err) {
+    console.error('[Cron] Expire bookings error:', err.message);
+  }
+});
