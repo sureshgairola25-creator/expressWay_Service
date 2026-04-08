@@ -1,56 +1,22 @@
-// const express = require('express');
-// const bookingController = require('../controllers/bookingController');
-
-// const router = express.Router();
-
-// // Create a new booking (initiate with payment link)
-// router.post('/initiate', bookingController.initiateBooking);
-
-// // Create a new booking (legacy)
-// router.post('/create', bookingController.createBooking);
-
-// // Get all bookings or filter by user ID
-// router.get('/list', bookingController.getBookingList);
-
-// // Get bookings for a specific user
-// router.get('/:userId', bookingController.getUserBookings);
-
-// // Get booking details
-// router.get('/details/:bookingId', bookingController.getBookingDetails);
-
-// // Cancel a booking
-// router.put('/:id/cancel', bookingController.cancelBooking);
-
-// module.exports = router;
-
-// routes/bookingRoutes.js
-// ─────────────────────────────────────────────────────────────────────────────
- 
 const express = require('express');
 const router  = express.Router();
 const bookingController = require('../controllers/bookingController');
-// const { authenticate, isAdmin } = require('../../middleware/auth'); // uncomment when auth is ready
- 
-// ── User booking routes ───────────────────────────────────────────────────────
- 
-// Create bookings — one endpoint per cab type
-router.post('/sharing',     /* authenticate, */ bookingController.initiateSharingBooking);
-router.post('/cabin',       /* authenticate, */ bookingController.initiateCabinBooking);
-router.post('/personalize', /* authenticate, */ bookingController.initiatePersonalizeBooking);
- 
-// User's own bookings
-router.get('/my-bookings',      /* authenticate, */ bookingController.getUserBookings);
-router.get('detail/:bookingId',       /* authenticate, */ bookingController.getBookingDetails);
-router.patch('/:id/cancel',     /* authenticate, */ bookingController.cancelBooking);
- 
-// ── Admin routes ──────────────────────────────────────────────────────────────
-router.get('/list',                              /* isAdmin, */ bookingController.getBookingList);
-router.patch('/admin/:bookingId/payment-status',       /* isAdmin, */ bookingController.updatePaymentStatus);
+const { protect, authorize } = require('../../middleware/auth');
 
-router.get(
-  '/personalizeCabs',
-  bookingController.availablePersonalizeCabs
-);
- 
+// ── User booking routes (require valid token) ─────────────────────────────────
+router.post('/sharing',     protect, bookingController.initiateSharingBooking);
+router.post('/cabin',       protect, bookingController.initiateCabinBooking);
+router.post('/personalize', protect, bookingController.initiatePersonalizeBooking);
+
+router.get('/my-bookings',        protect, bookingController.getUserBookings);
+router.get('detail/:bookingId',   protect, bookingController.getBookingDetails);
+router.patch('/:id/cancel',       protect, bookingController.cancelBooking);
+
+// ── Admin booking routes (require admin role) ─────────────────────────────────
+router.get('/list',                             protect, authorize('admin'), bookingController.getBookingList);
+router.patch('/admin/:bookingId/payment-status', protect, authorize('admin'), bookingController.updatePaymentStatus);
+
+// ── Personalize cab availability (public — used during trip search) ───────────
+router.get('/personalizeCabs', bookingController.availablePersonalizeCabs);
+
 module.exports = router;
-

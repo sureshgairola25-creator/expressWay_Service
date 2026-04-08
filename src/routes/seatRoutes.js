@@ -1,12 +1,12 @@
 const express = require('express');
-const seatController = require('../controllers/seatController');
-
 const router = express.Router();
+const seatController = require('../controllers/seatController');
+const { protect, authorize } = require('../../middleware/auth');
 
-// Get all seats for a trip
+// ── Public — seat availability shown during booking ───────────────────────────
 router.get('/:tripId', seatController.getSeatsForTrip);
 
-// Update seat price or booking status
-router.put('/:id', seatController.updateSeatPricing);
+// ── Admin-only ────────────────────────────────────────────────────────────────
+router.put('/:id', protect, authorize('admin'), seatController.updateSeatPricing);
 
 module.exports = router;

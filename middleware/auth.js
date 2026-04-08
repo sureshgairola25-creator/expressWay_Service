@@ -2,65 +2,68 @@ const jwt = require('jsonwebtoken');
 const asyncHandler = require('./async');
 const { User } = require('../src/db/models');
 const { Unauthorized, Forbidden } = require('http-errors');
-const { tokenBlacklist } = require('../src/services/userService');
 
-// Protect routes
+// ── protect: verify JWT, load req.user ────────────────────────────────────────
 exports.protect = asyncHandler(async (req, res, next) => {
   let token;
 
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-    // Set token from Bearer token in header
+  if (req.headers.authorization?.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
+  } else if (req.cookies?.token) {
+    token = req.cookies.token;
   }
-  // Set token from cookie
-  // else if (req.cookies.token) {
-  //   token = req.cookies.token;
-  // }
 
-  // Make sure token exists and is not blacklisted
   if (!token) {
-    return next(new Unauthorized('Not authorized to access this route'));
+    return next(new Unauthorized('No token provided — please log in'));
   }
 
-  // Check if token is blacklisted
-  // if (tokenBlacklist.has(token)) {
-  //   return next(new Unauthorized('Token has been invalidated. Please log in again.'));
-  // }
+  // Reject blacklisted (logged-out) tokens immediately
+  const { tokenBlacklist } = require('../src/services/userService');
+  if (tokenBlacklist && tokenBlacklist.has(token)) {
+    return next(new Unauthorized('Token has been invalidated — please log in again'));
+  }
 
   try {
-    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    req.user = await User.findByPk(decoded.id);
-
+    req.user = await User.findByPk(decoded.id, { attributes: { exclude: ['password'] } });
     if (!req.user) {
-      return next(new Unauthorized('Not authorized to access this route'));
+      return next(new Unauthorized('User no longer exists'));
     }
-
     next();
   } catch (err) {
-    return next(new Unauthorized('Not authorized to access this route'));
+    if (err.name === 'TokenExpiredError') {
+      return next(new Unauthorized('Access token expired — use /user/refresh-token to get a new one'));
+    }
+    return next(new Unauthorized('Invalid token — please log in again'));
   }
 });
 
-// Grant access to specific roles
+// ── authorize: gate by role(s) ────────────────────────────────────────────────
 exports.authorize = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
-      return next(
-        new Forbidden(
-          `User role ${req.user.role} is not authorized to access this route`
-        )
-      );
+      return next(new Forbidden(`Role '${req.user.role}' is not permitted to access this route`));
     }
     next();
   };
 };
 
-// Admin middleware
+// ── admin shorthand ───────────────────────────────────────────────────────────
 exports.admin = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
-    return next();
-  }
-  next(new Forbidden('Not authorized as an admin'));
+  if (req.user?.role === 'admin') return next();
+  next(new Forbidden('Admin access required'));
 };
+
+// ── ownerOrAdmin: resource must belong to req.user unless the user is admin ───
+// getOwnerId can be a function(req) → id, or a string param name e.g. 'userId'
+//
+// Example usage in routes:
+//   router.get('/rides/:userId', protect, ownerOrAdmin(req => req.params.userId), ctrl)
+exports.ownerOrAdmin = (getOwnerId) => asyncHandler(async (req, res, next) => {
+  if (req.user.role === 'admin') return next();
+  const ownerId = typeof getOwnerId === 'function' ? await getOwnerId(req) : req.params[getOwnerId];
+  if (String(req.user.id) !== String(ownerId)) {
+    return next(new Forbidden('Not authorized to access this resource'));
+  }
+  next();
+});

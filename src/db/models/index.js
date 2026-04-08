@@ -15,6 +15,7 @@ const User = require('./User');
 const NotificationModel = require('./notification');
 const Notification = NotificationModel(sequelize, require('sequelize').DataTypes);
 const PasswordResetToken = require('./PasswordResetToken');
+const RefreshToken = require('./RefreshToken');
 const CouponModel = require('./coupon');
 const Review = require('./Review');
 const BackgroundImage = require('./BackgroundImage');
@@ -38,6 +39,10 @@ setupHooks();
 // User - PasswordResetToken association
 User.hasMany(PasswordResetToken, { foreignKey: 'userId' });
 PasswordResetToken.belongsTo(User, { foreignKey: 'userId' });
+
+// User - RefreshToken association
+User.hasMany(RefreshToken, { foreignKey: 'userId', onDelete: 'CASCADE' });
+RefreshToken.belongsTo(User, { foreignKey: 'userId' });
 
 // Other associations
 StartLocation.hasMany(PickupPoint, { foreignKey: 'startLocationId' });
@@ -217,6 +222,7 @@ module.exports = {
   User,
   Coupon,
   PasswordResetToken,
+  RefreshToken,
   Review: ReviewModel,
   BackgroundImage,
   Notification

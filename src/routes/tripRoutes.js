@@ -1,45 +1,22 @@
 const express = require('express');
-const tripController = require('../controllers/tripController');
-
 const router = express.Router();
+const tripController = require('../controllers/tripController');
+const { protect, authorize } = require('../../middleware/auth');
 
-// 👉 Search for trips (sharing + cabin)
-router.get("/search", tripController.searchTrips);
+// ── Public search routes ──────────────────────────────────────────────────────
+router.get('/search',             tripController.searchTrips);
+router.get('/calculate-price',    tripController.calculatePrice);
+router.get('/search-personalize', tripController.searchPersonalizeTrips);
+router.get('/departure-times',    tripController.getDepartureTimes);
+router.get('/list',               tripController.getAllTrips);
+router.get('/details/:id',        tripController.getTripById);
+router.get('/:tripId/seats',      tripController.getTripSeats);
 
-// 👉 Calculate price for a trip based on bookingMode and seatCount
-// GET /api/trips/calculate-price?tripId=1&bookingMode=seat&seatCount=2
-// GET /api/trips/calculate-price?tripId=1&bookingMode=cabin
-router.get("/calculate-price", tripController.calculatePrice);
-
-// 👉 Search for personalize trips
-router.get("/search-personalize", tripController.searchPersonalizeTrips);
-
-// 👉 Get available departure times for a route + ride_type (clock-selector support)
-// GET /api/trips/departure-times?startLocation=1&endLocation=2&ride_type=sharing&date=2026-04-03
-router.get("/departure-times", tripController.getDepartureTimes);
-
-// 👉 Create a new trip
-router.post("/create", tripController.createTrip);
-
-// 👉 Get all trips
-router.get("/list", tripController.getAllTrips);
-
-// 👉 Get a single trip by ID
-router.get("/details/:id", tripController.getTripById);
-
-// 👉 Get seats for a trip
-router.get("/:tripId/seats", tripController.getTripSeats);
-
-// 👉 Update a trip by ID
-router.put("/update/:id", tripController.updateTrip);
-
-// 👉 Delete a trip by ID
-router.delete("/delete/:id", tripController.deleteTrip);
-
-
-
-router.put("/update-group/:tripGroupId", tripController.updateTripGroup);
-
-router.delete("/delete-group/:tripGroupId", tripController.deleteTripGroup);
+// ── Admin-only trip management ────────────────────────────────────────────────
+router.post('/create',                      protect, authorize('admin'), tripController.createTrip);
+router.put('/update/:id',                   protect, authorize('admin'), tripController.updateTrip);
+router.delete('/delete/:id',                protect, authorize('admin'), tripController.deleteTrip);
+router.put('/update-group/:tripGroupId',    protect, authorize('admin'), tripController.updateTripGroup);
+router.delete('/delete-group/:tripGroupId', protect, authorize('admin'), tripController.deleteTripGroup);
 
 module.exports = router;

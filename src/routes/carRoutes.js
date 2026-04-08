@@ -1,24 +1,16 @@
 const express = require('express');
+const router = express.Router();
 const carController = require('../controllers/carController');
 const { uploadCarImage } = require('../utils/s3');
+const { protect, authorize } = require('../../middleware/auth');
 
-const router = express.Router();
+// ── Public — needed by booking flow and trip search ───────────────────────────
+router.get('/list',       carController.getAllCars);
+router.get('/details/:id', carController.getCarById);
 
-// 👉 Create a new car
-router.post("/create",uploadCarImage, carController.createCar);
-
-// 👉 Get all cars
-router.get("/list", carController.getAllCars);
-
-// 👉 Get a car by ID
-router.get("/details/:id", carController.getCarById);
-
-// 👉 Update a car by ID
-router.put("/update/:id",uploadCarImage, carController.updateCar);
-
-// 👉 Delete a car by ID
-router.delete("/delete/:id", carController.deleteCar);
-
-
+// ── Admin-only ────────────────────────────────────────────────────────────────
+router.post('/create',     protect, authorize('admin'), uploadCarImage, carController.createCar);
+router.put('/update/:id',  protect, authorize('admin'), uploadCarImage, carController.updateCar);
+router.delete('/delete/:id', protect, authorize('admin'), carController.deleteCar);
 
 module.exports = router;

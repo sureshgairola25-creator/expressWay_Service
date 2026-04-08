@@ -1,18 +1,14 @@
 const express = require('express');
-const seatPricingController = require('../controllers/seatPricingController');
-
 const router = express.Router();
+const seatPricingController = require('../controllers/seatPricingController');
+const { protect, authorize } = require('../../middleware/auth');
 
-// Create seat pricing records for a trip
-router.post('/', seatPricingController.createSeatPricing);
-
-// Get all seat pricing records for a trip
+// ── Public — needed to display seat prices during booking ────────────────────
 router.get('/:tripId', seatPricingController.getSeatPricingByTrip);
 
-// Update seat pricing
-router.put('/:id', seatPricingController.updateSeatPricing);
-
-// Delete seat pricing
-router.delete('/:id', seatPricingController.deleteSeatPricing);
+// ── Admin-only ────────────────────────────────────────────────────────────────
+router.post('/',   protect, authorize('admin'), seatPricingController.createSeatPricing);
+router.put('/:id', protect, authorize('admin'), seatPricingController.updateSeatPricing);
+router.delete('/:id', protect, authorize('admin'), seatPricingController.deleteSeatPricing);
 
 module.exports = router;

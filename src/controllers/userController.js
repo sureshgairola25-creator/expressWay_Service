@@ -21,14 +21,14 @@ const userController = {
   }),
 
   login: asyncHandler(async (req, res) => {
-    const { token, user } = await userService.loginUser(req.body);
-    res.status(200).json({ success: true, token, data: user });
+    const { token, refreshToken, user } = await userService.loginUser(req.body);
+    res.status(200).json({ success: true, token, refreshToken, data: user });
   }),
 
   googleLogin: asyncHandler(async (req, res) => {
     const { idToken } = req.body;
-    const { token, user } = await userService.googleLogin(idToken);
-    res.status(200).json({ success: true, token, data: user });
+    const { token, refreshToken, user } = await userService.googleLogin(idToken);
+    res.status(200).json({ success: true, token, refreshToken, data: user });
   }),
 
   getMe: asyncHandler(async (req, res) => {
@@ -65,15 +65,22 @@ const userController = {
   }),
 
   // @route   POST /api/users/logout
-  // @desc    Logout user / invalidate token
+  // @desc    Logout — blacklists access token + revokes refresh token in DB
   // @access  Private
   logout: asyncHandler(async (req, res) => {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      throw new Error('No token provided');
-    }
-    const result = await userService.logout(token);
+    const accessToken = req.header('Authorization')?.replace('Bearer ', '');
+    const { refreshToken } = req.body;
+    const result = await userService.logout(accessToken, refreshToken);
     res.status(200).json(result);
+  }),
+
+  // @route   POST /api/users/refresh-token
+  // @desc    Issue new access token using a valid refresh token
+  // @access  Public
+  refreshToken: asyncHandler(async (req, res) => {
+    const { refreshToken } = req.body;
+    const result = await userService.refreshAccessToken(refreshToken);
+    res.status(200).json({ success: true, ...result });
   }),
 
   // @route   GET /api/admin/users

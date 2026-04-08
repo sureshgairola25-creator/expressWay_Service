@@ -11,13 +11,34 @@ const { Op } = require('sequelize');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
+// ── Access token (short-lived, stateless) ────────────────────────────────────
 const generateToken = (user) => {
-  return jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, {
-    expiresIn: '1d',
-  });
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role || 'user' },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_ACCESS_EXPIRE || '15m' }
+  );
 };
 
-// In-memory token blacklist
+// ── Refresh token (long-lived, stored in DB for revocation) ──────────────────
+const generateRefreshToken = (userId) => {
+  return jwt.sign(
+    { id: userId },
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+};
+
+const storeRefreshToken = async (userId, token) => {
+  const { RefreshToken } = require('../db/models');
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  // Purge old revoked tokens for this user (housekeeping)
+  await RefreshToken.destroy({ where: { userId, isRevoked: true } });
+  return RefreshToken.create({ userId, token, expiresAt });
+};
+
+// ── In-memory blacklist for immediate access-token revocation on logout ───────
+// Acceptable for a single-server deployment; tokens expire in 15m anyway.
 const tokenBlacklist = new Set();
 
 const userService = {
@@ -78,8 +99,10 @@ const userService = {
     }
 
     const token = generateToken(user);
-    user.password = undefined; // Exclude password from response
-    return { token, user };
+    const refreshToken = generateRefreshToken(user.id);
+    await storeRefreshToken(user.id, refreshToken);
+    user.password = undefined;
+    return { token, refreshToken, user };
   },
 
   googleLogin: async (idToken) => {
@@ -115,8 +138,10 @@ const userService = {
     }
 
     const token = generateToken(user);
-    user.password = undefined; // Exclude password from response
-    return { token, user };
+    const refreshToken = generateRefreshToken(user.id);
+    await storeRefreshToken(user.id, refreshToken);
+    user.password = undefined;
+    return { token, refreshToken, user };
   },
 
   updateProfile: async (userId, updateData) => {
@@ -568,7 +593,49 @@ verifyResetOtp: async (identifier, otp) => {
     success: true,
     message: 'Password reset successfully. You can now log in with your new password.',
   };
-}
+},
+
+  // ── Logout: blacklist access token + revoke refresh token in DB ──────────────
+  logout: async (accessToken, refreshToken) => {
+    if (accessToken) tokenBlacklist.add(accessToken);
+    if (refreshToken) {
+      const { RefreshToken } = require('../db/models');
+      await RefreshToken.update({ isRevoked: true }, { where: { token: refreshToken } });
+    }
+    return { success: true, message: 'Logged out successfully' };
+  },
+
+  // ── Refresh: issue new access token using a valid refresh token ───────────────
+  refreshAccessToken: async (refreshTokenStr) => {
+    if (!refreshTokenStr) throw new BadRequest('Refresh token required');
+
+    let decoded;
+    try {
+      decoded = jwt.verify(
+        refreshTokenStr,
+        process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
+      );
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        throw new Unauthorized('Refresh token expired — please log in again');
+      }
+      throw new Unauthorized('Invalid refresh token');
+    }
+
+    const { RefreshToken } = require('../db/models');
+    const stored = await RefreshToken.findOne({
+      where: { token: refreshTokenStr, userId: decoded.id, isRevoked: false }
+    });
+    if (!stored) throw new Unauthorized('Refresh token not found or already revoked');
+    if (new Date() > new Date(stored.expiresAt)) {
+      throw new Unauthorized('Refresh token expired — please log in again');
+    }
+
+    const user = await User.findByPk(decoded.id);
+    if (!user) throw new Unauthorized('User not found');
+
+    return { token: generateToken(user) };
+  },
 };
 const normalizeIdentifier = (identifier) => {
   const isEmail = identifier.includes('@');
@@ -581,3 +648,5 @@ const normalizeIdentifier = (identifier) => {
 };
 
 module.exports = userService;
+// Export tokenBlacklist so middleware/auth.js can check it on every request
+module.exports.tokenBlacklist = tokenBlacklist;
