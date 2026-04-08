@@ -19,6 +19,12 @@ const DropPoint = sequelize.define('DropPoint', {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
   },
+  cabType: {
+    type: DataTypes.ENUM('sharing', 'cabin', 'personalize', 'all'),
+    defaultValue: 'all',
+    field: 'cab_type',
+    comment: 'Namespace: sharing+cabin share one namespace, personalize is separate',
+  },
 }, {
   tableName: 'DropPoints',
   timestamps: true,

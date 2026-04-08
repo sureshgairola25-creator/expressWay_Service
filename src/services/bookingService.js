@@ -1076,7 +1076,7 @@ cancelBooking: async (bookingId, userId) => {
           cabType: 'personalize',
 
           ...(vehicleType && {
-            vehicleCategory: vehicleType
+            vehicleCategory: { [Op.in]: vehicleType.split(',').map(v => v.trim()) }
           })
         }
       }

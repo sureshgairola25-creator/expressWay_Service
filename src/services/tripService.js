@@ -1005,9 +1005,9 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
  searchPersonalizeTrips : async (queryParams = {}) => {
   try {
     // Params: startLocation, endLocation, date (required)
-    // vehicleCategory: "Compact" | "Executive" | "Family" | "Grand" (optional)
-    // carType: legacy filter kept for backward-compat (e.g. "Sedan")
-    let { startLocation, endLocation, date, carType, vehicleCategory } = queryParams;
+    // vehicleType: comma-separated filter sent by frontend e.g. "compact,executive"
+    // vehicleCategory / carType: legacy aliases kept for backward-compat
+    let { startLocation, endLocation, date, vehicleType, carType, vehicleCategory } = queryParams;
 
     // ── 1. Validate required params ───────────────────────────────────────────
     if (!startLocation || !endLocation) {
@@ -1033,34 +1033,21 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
     // ── 2. Build Car WHERE clause ─────────────────────────────────────────────
     const carWhere = { cabType: 'personalize' };
 
-    // vehicleCategory filter (Compact / Executive / Family / Grand)
-    // Maps to the DB vehicleCategory column if set, otherwise falls back to carType
-    const categoryToCarTypes = {
-      'compact':   ['compact'],
-      'executive': ['executive'],
-      'family':    ['family'],
-      'grand':     ['grand'],
-    };
+    // Resolve the active type filter — vehicleType (frontend) takes priority,
+    // then vehicleCategory, then legacy carType.
+    const rawFilter = vehicleType || vehicleCategory || carType || '';
+    const activeTypes = rawFilter
+      .split(',')
+      .map(t => t.trim().toLowerCase())
+      .filter(Boolean);
 
-    if (vehicleCategory && vehicleCategory.trim() !== '') {
-      const cat = vehicleCategory.trim();
-      const mappedTypes = categoryToCarTypes[cat];
-      if (mappedTypes) {
-        // Prefer vehicleCategory DB column; fall back to carType mapping
-        carWhere[Op.or] = [
-          { vehicleCategory: cat },
-          { carType: { [Op.in]: mappedTypes } },
-        ];
-      }
-    } else if (carType && carType.trim() !== '') {
-      // Legacy carType filter (kept for backward-compat)
-      // carWhere.carType = carType.trim().replace(/^\w/, c => c.toUpperCase());
-      // carWhere.carType = carType.trim().toLowerCase();
-      if (carType.includes(",")) {
-  carWhere.carType = {
-    [Op.in]: carType.split(",")
-  };
-}
+    if (activeTypes.length > 0) {
+      // Each car stores its category in EITHER vehicleCategory OR carType column.
+      // Use OR so cars with vehicleCategory=null but matching carType are included.
+      carWhere[Op.or] = [
+        { vehicleCategory: { [Op.in]: activeTypes } },
+        { carType:         { [Op.in]: activeTypes } },
+      ];
     }
 
     // ── 3. Fetch trips ────────────────────────────────────────────────────────

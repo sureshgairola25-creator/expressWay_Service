@@ -3,6 +3,27 @@ const db = require('../db/models');
 const { Op } = require('sequelize');
 const { StartLocation, EndLocation, PickupPoint, DropPoint } = db;
 
+// ── Uniqueness scope helpers ───────────────────────────────────────────────────
+// Sharing and Cabin share the 'shared' namespace.
+// Personalized is its own namespace.
+// 'all' conflicts with BOTH namespaces.
+//
+// Returns the locationType values that would conflict with the given locationType,
+// so we can do: WHERE name = ? AND locationType IN (conflicting)
+const ltConflicts = (lt) => {
+  if (lt === 'personalized') return ['personalized', 'all'];
+  if (lt === 'all')          return ['shared', 'personalized', 'all'];
+  return ['shared', 'all'];                       // 'shared' → sharing + cabin
+};
+
+// PickupPoint / DropPoint use cabType values: 'sharing', 'cabin', 'personalize', 'all'
+// Sharing and Cabin are still the same namespace.
+const ctConflicts = (ct) => {
+  if (ct === 'personalize') return ['personalize', 'all'];
+  if (ct === 'all')         return ['sharing', 'cabin', 'personalize', 'all'];
+  return ['sharing', 'cabin', 'all'];             // 'sharing' or 'cabin'
+};
+
 const locationService = {
 
   // ── START LOCATIONS ────────────────────────────────────────────────────────
@@ -32,13 +53,15 @@ const locationService = {
     const { name, location_type } = data;
     if (!name?.trim()) throw new BadRequest('Start location name is required');
     try {
-      const existing = await StartLocation.findOne({ where: { name: name.trim() } });
-      if (existing) throw new BadRequest(`Start location "${name}" already exists`);
-      const location = await StartLocation.create({
-        name:          name.trim(),
-        locationType: location_type
+      const lt = location_type || 'shared';
+      // Only conflict within the same namespace — 'shared' and 'personalized' are separate
+      const existing = await StartLocation.findOne({
+        where: { name: name.trim(), locationType: { [Op.in]: ltConflicts(lt) } }
       });
-      return location;
+      if (existing) throw new BadRequest(
+        `Start location "${name}" already exists for ${lt === 'personalized' ? 'personalized' : 'sharing/cabin'} trips`
+      );
+      return await StartLocation.create({ name: name.trim(), locationType: lt });
     } catch (e) {
       if (e.status) throw e;
       throw new InternalServerError('Failed to create start location');
@@ -51,10 +74,19 @@ const locationService = {
     try {
       const location = await StartLocation.findByPk(id);
       if (!location) throw new NotFound('Start location not found');
-      await location.update({
-        name: name.trim(),
-        ...(location_type && { location_type }),
+      const lt = location_type || location.locationType || 'shared';
+      // Ensure renamed value doesn't clash within the same namespace (exclude self)
+      const conflict = await StartLocation.findOne({
+        where: {
+          name:         name.trim(),
+          locationType: { [Op.in]: ltConflicts(lt) },
+          id:           { [Op.ne]: parseInt(id) },
+        }
       });
+      if (conflict) throw new BadRequest(
+        `Start location "${name}" already exists for ${lt === 'personalized' ? 'personalized' : 'sharing/cabin'} trips`
+      );
+      await location.update({ name: name.trim(), ...(location_type && { locationType: location_type }) });
       return location;
     } catch (e) {
       if (e.status) throw e;
@@ -109,17 +141,28 @@ const locationService = {
 
   createEndLocation: async (data) => {
     const { name, startLocationId, location_type } = data;
-    if (!name?.trim())  throw new BadRequest('End location name is required');
+    if (!name?.trim())    throw new BadRequest('End location name is required');
     if (!startLocationId) throw new BadRequest('startLocationId is required');
     try {
       const startLoc = await StartLocation.findByPk(startLocationId);
       if (!startLoc) throw new NotFound('Start location not found');
-      const location = await EndLocation.create({
+      const lt = location_type || 'shared';
+      // Scoped by route (startLocationId) + namespace
+      const existing = await EndLocation.findOne({
+        where: {
+          name:            name.trim(),
+          startLocationId: parseInt(startLocationId),
+          locationType:    { [Op.in]: ltConflicts(lt) },
+        }
+      });
+      if (existing) throw new BadRequest(
+        `End location "${name}" already exists on this route for ${lt === 'personalized' ? 'personalized' : 'sharing/cabin'} trips`
+      );
+      return await EndLocation.create({
         name:            name.trim(),
         startLocationId: parseInt(startLocationId),
-        locationType:   location_type
+        locationType:    lt,
       });
-      return location;
     } catch (e) {
       if (e.status) throw e;
       throw new InternalServerError('Failed to create end location');
@@ -132,10 +175,19 @@ const locationService = {
     try {
       const location = await EndLocation.findByPk(id);
       if (!location) throw new NotFound('End location not found');
-      await location.update({
-        name: name.trim(),
-        ...(location_type && { location_type }),
+      const lt = location_type || location.locationType || 'shared';
+      const conflict = await EndLocation.findOne({
+        where: {
+          name:            name.trim(),
+          startLocationId: location.startLocationId,
+          locationType:    { [Op.in]: ltConflicts(lt) },
+          id:              { [Op.ne]: parseInt(id) },
+        }
       });
+      if (conflict) throw new BadRequest(
+        `End location "${name}" already exists on this route for ${lt === 'personalized' ? 'personalized' : 'sharing/cabin'} trips`
+      );
+      await location.update({ name: name.trim(), ...(location_type && { locationType: location_type }) });
       return location;
     } catch (e) {
       if (e.status) throw e;
@@ -214,6 +266,19 @@ const locationService = {
       const startLoc = await StartLocation.findByPk(startLocationId);
       if (!startLoc) throw new NotFound('Start location not found');
 
+      // Scoped by startLocationId + cabType namespace
+      const ct = cabType || 'all';
+      const existing = await PickupPoint.findOne({
+        where: {
+          name:            name.trim(),
+          startLocationId: parseInt(startLocationId),
+          cabType:         { [Op.in]: ctConflicts(ct) },
+        }
+      });
+      if (existing) throw new BadRequest(
+        `Pickup point "${name}" already exists for this start location under ${ct === 'personalize' ? 'personalized' : 'sharing/cabin'} trips`
+      );
+
       const isDefault = isCityDefault === true || isCityDefault === 'true' || isCityDefault === 1;
 
       const point = await PickupPoint.create({
@@ -288,17 +353,31 @@ const locationService = {
   },
 
   createDropPoint: async (data) => {
-    const { name, endLocationId } = data;
-    if (!name?.trim()) throw new BadRequest('Drop point name is required');
+    const { name, endLocationId, cabType = 'all' } = data;
+    if (!name?.trim())  throw new BadRequest('Drop point name is required');
     if (!endLocationId) throw new BadRequest('endLocationId is required');
     try {
       const endLoc = await EndLocation.findByPk(endLocationId);
       if (!endLoc) throw new NotFound('End location not found');
-      const point = await DropPoint.create({
+
+      // Scoped by endLocationId + cabType namespace
+      const ct = cabType || 'all';
+      const existing = await DropPoint.findOne({
+        where: {
+          name:          name.trim(),
+          endLocationId: parseInt(endLocationId),
+          cabType:       { [Op.in]: ctConflicts(ct) },
+        }
+      });
+      if (existing) throw new BadRequest(
+        `Drop point "${name}" already exists for this end location under ${ct === 'personalize' ? 'personalized' : 'sharing/cabin'} trips`
+      );
+
+      return await DropPoint.create({
         name:          name.trim(),
         endLocationId: parseInt(endLocationId),
+        cabType:       ct,
       });
-      return point;
     } catch (e) {
       if (e.status) throw e;
       throw new InternalServerError('Failed to create drop point');
