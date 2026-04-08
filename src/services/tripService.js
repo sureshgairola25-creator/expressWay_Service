@@ -973,7 +973,16 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
       });
     }
 
-    filteredTrips.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+    // Sort by IST time-of-day (not full UTC timestamp).
+    // Recurring trips retain their original creation date in startTime, so comparing
+    // full datetimes would order them by creation date rather than departure time.
+    // Using minutes-within-IST-day gives correct chronological order for all trips.
+    const istMinutesOfDay = (isoString) => {
+      const d = new Date(isoString);
+      return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440;
+    };
+
+    filteredTrips.sort((a, b) => istMinutesOfDay(a.startTime) - istMinutesOfDay(b.startTime));
 
     // Then user-specified sort overrides (only if explicitly requested)
     if (sortBy === 'priceLowHigh') {
@@ -981,9 +990,9 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
     } else if (sortBy === 'priceHighLow') {
       filteredTrips.sort((a, b) => b.displayPrice - a.displayPrice);
     } else if (sortBy === 'departureEarliest') {
-      filteredTrips.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+      filteredTrips.sort((a, b) => istMinutesOfDay(a.startTime) - istMinutesOfDay(b.startTime));
     } else if (sortBy === 'departureLatest') {
-      filteredTrips.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+      filteredTrips.sort((a, b) => istMinutesOfDay(b.startTime) - istMinutesOfDay(a.startTime));
     }
 
     return filteredTrips;
