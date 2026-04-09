@@ -738,26 +738,26 @@ searchTrips: async (queryParams = {}) => {
       const basePrice = getBasePrice(t.car, ride_type);
       let pickupOverridePrice = null;  // cheapest applicable pickup price
 
-      if (startId) {
-        const cheapestPickup = await PickupPoint.findOne({
-          where: {
-            startLocationId: startId,
-            isCityDefault:   true,
-            status:          1,
-            price:           { [Op.not]: null },
-            endLocationId:   t.endLocationId,
-          },
-          order: [['price', 'ASC']],
-          raw: true,
-        });
-        if (cheapestPickup?.price) {
-          const pp = parseFloat(cheapestPickup.price);
-          // Only use pickup price if it is strictly cheaper than base price
-          if (pp < basePrice) pickupOverridePrice = pp;
-        }
-      }
+      const effectiveCabType = ride_type || t.car?.cabType;
+if (startId && effectiveCabType !== 'cabin') {   // ← ADD THIS GUARD
+  const cheapestPickup = await PickupPoint.findOne({
+    where: {
+      startLocationId: startId,
+      isCityDefault:   true,
+      status:          1,
+      price:           { [Op.not]: null },
+      endLocationId:   t.endLocationId,
+    },
+    order: [['price', 'ASC']],
+    raw: true,
+  });
+  if (cheapestPickup?.price) {
+    const pp = parseFloat(cheapestPickup.price);
+    if (pp < basePrice) pickupOverridePrice = pp;
+  }
+}
 
-      const displayPrice = pickupOverridePrice !== null ? pickupOverridePrice : basePrice;
+const displayPrice = pickupOverridePrice !== null ? pickupOverridePrice : basePrice;
 
       // ── Price filter ──────────────────────────────────────────────────────
       if (minPrice && displayPrice < parseFloat(minPrice)) continue;
