@@ -1007,7 +1007,7 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
     // Params: startLocation, endLocation, date (required)
     // vehicleType: comma-separated filter sent by frontend e.g. "compact,executive"
     // vehicleCategory / carType: legacy aliases kept for backward-compat
-    let { startLocation, endLocation, date, vehicleType, carType, vehicleCategory } = queryParams;
+    let { startLocation, endLocation, date, vehicleType, carType, vehicleCategory,minPrice, maxPrice, sortBy } = queryParams;
 
     // ── 1. Validate required params ───────────────────────────────────────────
     if (!startLocation || !endLocation) {
@@ -1041,14 +1041,12 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
       .map(t => t.trim().toLowerCase())
       .filter(Boolean);
 
-    if (activeTypes.length > 0) {
-      // Each car stores its category in EITHER vehicleCategory OR carType column.
-      // Use OR so cars with vehicleCategory=null but matching carType are included.
-      carWhere[Op.or] = [
-        { vehicleCategory: { [Op.in]: activeTypes } },
-        { carType:         { [Op.in]: activeTypes } },
-      ];
-    }
+ // ✅ Filter on class column (where data actually lives)
+// ✅ CORRECT — car_type has compact/executive/family/grand
+if (activeTypes.length > 0) {
+  carWhere.carType = { [Op.in]: activeTypes };
+}
+
 
     // ── 3. Fetch trips ────────────────────────────────────────────────────────
     const trips = await Trip.findAll({
@@ -1157,6 +1155,7 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
           carUniqueNumber:    t.dataValues.car?.carUniqueNumber,
           cabType:            'personalize',
           vehicleCategory:    t.dataValues.car?.vehicleCategory || null,
+          type: t.dataValues.car?.carType,
           availableModes:     ['personalize'],
           pricePerCar:        carPrice,
           imageUrl:           t.dataValues.car?.imageUrl,
@@ -1171,9 +1170,24 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
     }
  
  
-    availableTrips.sort((a, b) => a.price - b.price);
+    // availableTrips.sort((a, b) => a.price - b.price);
+    let result = availableTrips;
+
+    if (minPrice) {
+      result = result.filter(t => parseFloat(t.price) >= parseFloat(minPrice));
+    }
+    if (maxPrice) {
+      result = result.filter(t => parseFloat(t.price) <= parseFloat(maxPrice));
+    }
+
+    // ✅ Sort — replaces the existing availableTrips.sort() at bottom
+    if (sortBy === "highToLow") {
+      result.sort((a, b) => b.price - a.price);
+    } else {
+      result.sort((a, b) => a.price - b.price); // default lowToHigh
+    }
  
-    return availableTrips;
+    return result;
  
   } catch (error) {
     console.error('[searchPersonalizeTrips] Error:', error);
