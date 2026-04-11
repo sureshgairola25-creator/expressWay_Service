@@ -370,11 +370,6 @@ const isCabinEligible =
     //   THEN use pickup_point_price
     //   ELSE use car.pricePerCabin
     const basePricePerCabin  = parseFloat(trip.car?.pricePerCabin || 0);
-    // const pickupPtPrice      = pickupPt?.price != null ? parseFloat(pickupPt.price) : null;
-    // const effectivePricePerCabin = (pickupPtPrice !== null && pickupPtPrice < basePricePerCabin)
-    //   ? pickupPtPrice
-    //   : basePricePerCabin;
-    // const effectivePricePerCabin = basePricePerCabin;  // always use car's cabin price
     const pickupPtPrice = pickupPt?.price != null ? parseFloat(pickupPt.price) : null;
 const effectivePricePerCabin = pickupPtPrice !== null 
   ? pickupPtPrice          // ← pickup point price takes priority
@@ -384,16 +379,16 @@ const effectivePricePerCabin = pickupPtPrice !== null
     const bookedCabins = parseInt(cabinNumber);   // how many cabins selected
     // const expectedTotal = effectivePricePerCabin * bookedCabins;
     const expectedTotal = effectivePricePerCabin * 1;  // hamesha 1 cabin book hoti hai ek baar mein
-const effectiveFinal = parseFloat(totalAmount);
-if (paymentMode === 'full' && Math.abs(parseFloat(paidAmount) - effectiveFinal) > 0.01) {
-  throw new BadRequest('For full payment, paidAmount must equal totalAmount');
-}
-
+    
     if (Math.abs(parseFloat(totalAmount) - expectedTotal) > 0.01) {
       throw new BadRequest(
-  `Cabin price mismatch. Expected ₹${expectedTotal} ` +
-  `(1 cabin × ₹${effectivePricePerCabin})`
-);
+        `Cabin price mismatch. Expected ₹${expectedTotal} ` +
+        `(1 cabin × ₹${effectivePricePerCabin})`
+      );
+    }
+    const effectiveFinal = parseFloat(totalAmount);
+    if (paymentMode === 'full' && Math.abs(parseFloat(paidAmount) - effectiveFinal) > 0.01) {
+      throw new BadRequest('For full payment, paidAmount must equal totalAmount');
     }
 
     // Get seats in this cabin
