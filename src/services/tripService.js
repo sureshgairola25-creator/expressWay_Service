@@ -736,10 +736,10 @@ searchTrips: async (queryParams = {}) => {
       // Rule: use pickup_price only if it exists AND is less than base_price
       const startId = t.startLocationId || t.dataValues?.startLocationId;
       const basePrice = getBasePrice(t.car, ride_type);
-      let pickupOverridePrice = null;  // cheapest applicable pickup price
+let pickupOverridePrice = null;
+const effectiveCabType = ride_type || t.car?.cabType;
 
-      const effectiveCabType = ride_type || t.car?.cabType;
-if (startId && effectiveCabType !== 'cabin') {   // ← ADD THIS GUARD
+if (startId) {
   const cheapestPickup = await PickupPoint.findOne({
     where: {
       startLocationId: startId,
@@ -747,13 +747,20 @@ if (startId && effectiveCabType !== 'cabin') {   // ← ADD THIS GUARD
       status:          1,
       price:           { [Op.not]: null },
       endLocationId:   t.endLocationId,
+      // ✅ Filter by ride type so sharing pickups don't affect cabin price
+      [Op.or]: [
+        { cabType: effectiveCabType },
+        { cabType: 'all' }
+      ]
     },
     order: [['price', 'ASC']],
     raw: true,
   });
   if (cheapestPickup?.price) {
     const pp = parseFloat(cheapestPickup.price);
-    if (pp < basePrice) pickupOverridePrice = pp;
+    // ✅ For both sharing and cabin — use cheapest pickup as display price
+    // This ensures sort and filter match what user sees on frontend
+    pickupOverridePrice = pp;
   }
 }
 
@@ -781,8 +788,15 @@ const displayPrice = pickupOverridePrice !== null ? pickupOverridePrice : basePr
             attributes: ['cabinNumber']
           });
           const bookedCabins    = new Set(cabinBookings.map(b => b.cabinNumber)).size;
-          const availableCabins = (t.car?.totalCabins || 0) - bookedCabins;
-          if (availableCabins < minSeatsInt) continue;
+          // const availableCabins = (t.car?.totalCabins || 0) - bookedCabins;
+          // if (availableCabins < minSeatsInt) continue;
+          // ✅ Fix — calculate totalCabins same as the fix done later in the code
+const cabinCap = t.car?.cabinCapacity || 3;
+const totalCabinsForFilter = t.car?.totalCabins 
+  || Math.floor((t.car?.totalSeats || 0) / cabinCap) 
+  || 0;
+const availableCabinsForFilter = totalCabinsForFilter - bookedCabins;
+if (availableCabinsForFilter < minSeatsInt) continue;
         } else {
           // Sharing: leftSeats count
           if (leftSeats.length < minSeatsInt) continue;
@@ -919,10 +933,18 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
         bookedCabinNumbers = cabinBookings.map(b => b.cabinNumber);
       }
 
-      const totalCabins     = t.car?.totalCabins || 0;
-      const availableCabins = cabType === 'cabin'
-        ? totalCabins - new Set(bookedCabinNumbers).size
-        : null;
+      // const totalCabins     = t.car?.totalCabins || 0;
+      // const availableCabins = cabType === 'cabin'
+      //   ? totalCabins - new Set(bookedCabinNumbers).size
+      //   : null;
+      const cabinCapacity = t.car?.cabinCapacity || 3;
+const totalCabins = t.car?.totalCabins 
+  || Math.floor((t.car?.totalSeats || 0) / cabinCapacity) 
+  || 0;
+
+const availableCabins = cabType === 'cabin'
+  ? totalCabins - new Set(bookedCabinNumbers).size
+  : null;
 
       filteredTrips.push({
         trip_id:        t.id,

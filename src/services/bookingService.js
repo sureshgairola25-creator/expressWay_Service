@@ -188,9 +188,12 @@ const bookingService = {
     //   ELSE use seat_price          (car base price)
     const basePricePerSeat  = parseFloat(car?.pricePerSeat || 0);
     const pickupPointPrice  = pickupPoint?.price != null ? parseFloat(pickupPoint.price) : null;
-    const effectivePricePerSeat = (pickupPointPrice !== null && pickupPointPrice < basePricePerSeat)
-      ? pickupPointPrice
-      : basePricePerSeat;
+    // const effectivePricePerSeat = (pickupPointPrice !== null && pickupPointPrice < basePricePerSeat)
+      // ? pickupPointPrice
+      // : basePricePerSeat;
+      const effectivePricePerSeat = pickupPointPrice !== null
+  ? pickupPointPrice       // ← pickup point price takes priority
+  : basePricePerSeat;   
 
     const seatTotal = effectivePricePerSeat * seatRecords.length;
 
@@ -371,13 +374,20 @@ const isCabinEligible =
     // const effectivePricePerCabin = (pickupPtPrice !== null && pickupPtPrice < basePricePerCabin)
     //   ? pickupPtPrice
     //   : basePricePerCabin;
-    const effectivePricePerCabin = basePricePerCabin;  // always use car's cabin price
+    // const effectivePricePerCabin = basePricePerCabin;  // always use car's cabin price
+    const pickupPtPrice = pickupPt?.price != null ? parseFloat(pickupPt.price) : null;
+const effectivePricePerCabin = pickupPtPrice !== null 
+  ? pickupPtPrice          // ← pickup point price takes priority
+  : basePricePerCabin;  
 
 
     const bookedCabins = parseInt(cabinNumber);   // how many cabins selected
     // const expectedTotal = effectivePricePerCabin * bookedCabins;
     const expectedTotal = effectivePricePerCabin * 1;  // hamesha 1 cabin book hoti hai ek baar mein
-
+const effectiveFinal = parseFloat(totalAmount);
+if (paymentMode === 'full' && Math.abs(parseFloat(paidAmount) - effectiveFinal) > 0.01) {
+  throw new BadRequest('For full payment, paidAmount must equal totalAmount');
+}
 
     if (Math.abs(parseFloat(totalAmount) - expectedTotal) > 0.01) {
       throw new BadRequest(
