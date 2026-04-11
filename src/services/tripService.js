@@ -708,7 +708,7 @@ searchTrips: async (queryParams = {}) => {
         where: {
           tripId:        t.id,
           journeyDate:   searchDate,
-          bookingStatus: { [Op.not]: 'cancelled' }
+          bookingStatus: { [Op.not]: ['cancelled', 'expired'] }
         },
         attributes: ['seats']
       });

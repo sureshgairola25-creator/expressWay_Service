@@ -116,7 +116,7 @@ const validateSharingBooking = (body) => {
 const validateCabinBooking = (body) => {
   validateCommon(body);
 
-  const { cabinNumber, cabinCapacity, passengers } = body;
+  const { cabinNumber, cabinCapacity, cabinCount = 1, passengers } = body;
 
   if (!cabinNumber || isNaN(parseInt(cabinNumber))) {
     throw new BadRequest('cabinNumber is required for cabin cab booking');
@@ -125,9 +125,12 @@ const validateCabinBooking = (body) => {
   if (!cabinCapacity || isNaN(parseInt(cabinCapacity)) || parseInt(cabinCapacity) < 1) {
     throw new BadRequest('cabinCapacity is required for cabin cab booking');
   }
+    // ✅ FIX — total passengers = cabinCapacity × cabinCount
+  const totalCabinCount     = parseInt(cabinCount) || 1;
+  const totalSeatsBooked    = parseInt(cabinCapacity) * totalCabinCount;
 
   // Validate passengers — one per seat in the cabin
-  validatePassengers(passengers, parseInt(cabinCapacity), 'cabin seats');
+  validatePassengers(passengers, totalSeatsBooked, 'cabin seats');
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

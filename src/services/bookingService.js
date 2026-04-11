@@ -100,6 +100,7 @@ async function getBookedSeatNumbers(tripId, journeyDate) {
 // ─────────────────────────────────────────────────────────────────────────────
 const sanitizePassengers = (passengers, seatNumbers) => {
   return passengers.map((p, i) => ({
+    ...p,
     seatNumber: seatNumbers[i] || null,           // which seat this passenger occupies
     fullName:   p.fullName.trim(),
     age:        parseInt(p.age),
@@ -328,12 +329,13 @@ await Trip.decrement('availableSeats', {
   initiateCabinBooking: async (bookingData) => {
     const {
       userId, tripId, pickupPointId, dropPointId,
-      cabinNumber, cabinCapacity,
+      cabinNumber, cabinCapacity, cabinCount = 1,
       totalAmount, paidAmount, paymentMode = 'full',
       customerEmail, customerPhone, selectedMeal,
       journeyDate,
       passengers = [],   // one per seat in the cabin
     } = bookingData;
+const bookedCabinCount = parseInt(cabinCount) || 1;
 
     const user = await User.findByPk(userId);
     if (!user) throw new BadRequest('User not found');
@@ -350,17 +352,24 @@ const isCabinEligible =
     }
 
     // Cabin availability check
-    const existingCabinBooking = await Booking.findOne({
-      where: {
-        tripId,
-        journeyDate:   new Date(journeyDate),
-        cabinNumber:   parseInt(cabinNumber),
-        bookingStatus: { [Op.not]: 'cancelled' }
-      }
-    });
-    if (existingCabinBooking) {
-      throw new BadRequest(`Cabin ${cabinNumber} is already booked for this date`);
-    }
+    const cabinNumbersToBook = [];
+for (let i = 0; i < bookedCabinCount; i++) {
+  cabinNumbersToBook.push(parseInt(cabinNumber) + i);
+}
+
+const existingCabinBookings = await Booking.findAll({
+  where: {
+    tripId,
+    journeyDate:      new Date(journeyDate),
+    cabinNumber:      { [Op.in]: cabinNumbersToBook },
+    booking_type:     'cabin',              // ← real DB column
+    bookingStatus:    { [Op.notIn]: ['cancelled', 'expired'] }  // ← exclude expired
+  }
+});
+if (existingCabinBookings.length > 0) {
+  const bookedNums = existingCabinBookings.map(b => b.cabinNumber).join(', ');
+  throw new BadRequest(`Cabin(s) ${bookedNums} already booked for this date`);
+}
     const pickupPt = await PickupPoint.findByPk(pickupPointId, {
       attributes: ['id', 'name', 'price', 'type']
     });
@@ -376,16 +385,15 @@ const effectivePricePerCabin = pickupPtPrice !== null
   : basePricePerCabin;  
 
 
-    const bookedCabins = parseInt(cabinNumber);   // how many cabins selected
-    // const expectedTotal = effectivePricePerCabin * bookedCabins;
-    const expectedTotal = effectivePricePerCabin * 1;  // hamesha 1 cabin book hoti hai ek baar mein
-    
+    // ✅ AFTER — use actual cabinCount
+    const expectedTotal = effectivePricePerCabin * bookedCabinCount;
+
     if (Math.abs(parseFloat(totalAmount) - expectedTotal) > 0.01) {
-      throw new BadRequest(
-        `Cabin price mismatch. Expected ₹${expectedTotal} ` +
-        `(1 cabin × ₹${effectivePricePerCabin})`
-      );
-    }
+  throw new BadRequest(
+    `Cabin price mismatch. Expected ₹${expectedTotal} ` +
+    `(${bookedCabinCount} cabin${bookedCabinCount > 1 ? 's' : ''} × ₹${effectivePricePerCabin})`
+  );
+}
     const effectiveFinal = parseFloat(totalAmount);
     if (paymentMode === 'full' && Math.abs(parseFloat(paidAmount) - effectiveFinal) > 0.01) {
       throw new BadRequest('For full payment, paidAmount must equal totalAmount');
@@ -393,12 +401,22 @@ const effectivePricePerCabin = pickupPtPrice !== null
 
     // Get seats in this cabin
     const capacity     = parseInt(cabinCapacity || trip.car?.cabinCapacity || 1);
-    const cabinIndex   = parseInt(cabinNumber) - 1;
-    const startIndex   = cabinIndex * capacity;
+const allSeats = await Seat.findAll({ 
+  where: { tripId }, 
+  order: [['seatNumber', 'ASC']] 
+});
 
-    const allSeats     = await Seat.findAll({ where: { tripId }, order: [['seatNumber', 'ASC']] });
-    const cabinSeats   = allSeats.slice(startIndex, startIndex + capacity);
-    const cabinSeatNumbers = cabinSeats.map(s => s.seatNumber);
+// Collect seats across all booked cabins
+// cabinNumber = starting cabin, book consecutive cabins
+let cabinSeatNumbers = [];
+for (let i = 0; i < bookedCabinCount; i++) {
+  const currentCabinIndex = (parseInt(cabinNumber) - 1) + i;
+  const start = currentCabinIndex * capacity;
+  const seats = allSeats.slice(start, start + capacity).map(s => s.seatNumber);
+  cabinSeatNumbers = [...cabinSeatNumbers, ...seats];
+}
+const cabinSeats = allSeats.filter(s => cabinSeatNumbers.includes(s.seatNumber));
+
 
     const amounts = buildPaymentAmounts(totalAmount, paidAmount, paymentMode);
 
@@ -445,8 +463,12 @@ const effectivePricePerCabin = pickupPtPrice !== null
         passengers:    sanitizedPassengers,   // ← stored as JSON
         priceBreakdown: {
           cabinNumber,
+          cabinCount: bookedCabinCount,
+          totalCabinPrice: effectivePricePerCabin * bookedCabinCount,
           cabinPrice: effectivePricePerCabin,
           seats: cabinSeatNumbers,
+          pickupPointId,
+          pickupPointName: pickupPt?.name || null,
           passengers: sanitizedPassengers.map(p => p.fullName),
           ...(selectedMeal?.price && {
             meal: { type: selectedMeal.type, price: selectedMeal.price }
@@ -484,7 +506,8 @@ const effectivePricePerCabin = pickupPtPrice !== null
         paymentSessionId = paymentResult.payment_session_id;
       }
       // ── Decrement INSIDE transaction ──────────────────────────────────
-  const cabinSeatsCount = freshTrip.seatsPerCabinSnapshot || capacity;
+      const cabinSeatsCount = (freshTrip.seatsPerCabinSnapshot || capacity) * bookedCabinCount;
+
   await Trip.decrement('availableSeats', {
     by: cabinSeatsCount,
     where: { id: tripId },

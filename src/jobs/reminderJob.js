@@ -107,31 +107,57 @@ cron.schedule('*/5 * * * *', async () => {
   try {
     const { literal } = require('sequelize');
 
+    // ✅ Step 1 — Find expired bookings BEFORE updating (need seatCount + tripId)
+    const expiredBookings = await Booking.findAll({
+      where: {
+        bookingStatus: 'initiated',
+        [Op.or]: [
+          { paymentExpiry: { [Op.lt]: new Date() } },
+          literal(
+            `(payment_expiry IS NULL AND created_at < '${
+              new Date(Date.now() - 15 * 60 * 1000)
+                .toISOString()
+                .slice(0, 19)
+                .replace('T', ' ')
+            }')`
+          ),
+        ],
+      },
+      attributes: ['id', 'tripId', 'seatCount', 'bookingType', 'journeyDate'],
+    });
+
+    if (expiredBookings.length === 0) return;
+
+    // ✅ Step 2 — Mark all as expired
+    const expiredIds = expiredBookings.map(b => b.id);
     const [count] = await Booking.update(
       { bookingStatus: 'expired' },
-      {
-        where: {
-          bookingStatus: 'initiated',
-          [Op.or]: [
-            // paymentExpiry set hai aur expire ho gayi
-            { paymentExpiry: { [Op.lt]: new Date() } },
-
-            // paymentExpiry NULL + booking 15 min purani (fallback)
-            // literal() use karo taaki Sequelize field mapping bypass ho
-            literal(
-              `(payment_expiry IS NULL AND created_at < '${
-                new Date(Date.now() - 15 * 60 * 1000)
-                  .toISOString()
-                  .slice(0, 19)
-                  .replace('T', ' ')
-              }')`
-            ),
-          ],
-        },
-      }
+      { where: { id: { [Op.in]: expiredIds } } }
     );
 
+    // ✅ Step 3 — Restore seats back to each trip
+    // Group by tripId — sum up seatCount per trip
+    const seatRestoreMap = {};
+    for (const booking of expiredBookings) {
+      const seats = parseInt(booking.seatCount) || 0;
+      if (seats <= 0) continue;
+      if (!seatRestoreMap[booking.tripId]) {
+        seatRestoreMap[booking.tripId] = 0;
+      }
+      seatRestoreMap[booking.tripId] += seats;
+    }
+
+    // Increment availableSeats for each affected trip
+    for (const [tripId, seatsToRestore] of Object.entries(seatRestoreMap)) {
+      await Trip.increment('availableSeats', {
+        by: seatsToRestore,
+        where: { id: parseInt(tripId) }
+      });
+      console.log(`[Cron] Restored ${seatsToRestore} seat(s) to trip ${tripId}`);
+    }
+
     if (count > 0) console.log(`[Cron] Expired ${count} initiated bookings`);
+
   } catch (err) {
     console.error('[Cron] Expire bookings error:', err.message);
   }
