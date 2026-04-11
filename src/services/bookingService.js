@@ -987,6 +987,15 @@ cancelBooking: async (bookingId, userId) => {
           { where: { tripId: booking.tripId, seatNumber: seatNumbers }, transaction: t }
         );
       }
+        // ✅ Restore available seats
+  const seatsToRestore = seatNumbers.length;
+  if (seatsToRestore > 0) {
+    await Trip.increment('availableSeats', {
+      by: seatsToRestore,
+      where: { id: booking.tripId },
+      transaction: t
+    });
+  }
  
     } else if (booking.bookingType === 'cabin') {
       // Cabin slot is freed by cancelled BookedSeat records
@@ -1002,6 +1011,15 @@ cancelBooking: async (bookingId, userId) => {
           { where: { tripId: booking.tripId, seatNumber: seatNumbers }, transaction: t }
         );
       }
+        // ✅ Restore cabin seats — use seatsPerCabinSnapshot if available
+  const seatsToRestore = seatNumbers.length;
+  if (seatsToRestore > 0) {
+    await Trip.increment('availableSeats', {
+      by: seatsToRestore,
+      where: { id: booking.tripId },
+      transaction: t
+    });
+  }
  
     } else if (booking.bookingType === 'personalize') {
       // Personalize marks Trip.isFullyBooked = true on booking
