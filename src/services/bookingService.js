@@ -234,7 +234,19 @@ const bookingService = {
     const amounts = buildPaymentAmounts(effectiveFinal, paidAmount, paymentMode);
 
     // Sanitize passengers — link each to their seat
-    const sanitizedPassengers = sanitizePassengers(passengers, selectedSeats);
+    // const sanitizedPassengers = sanitizePassengers(passengers, selectedSeats);
+    const sanitizedPassengers = selectedSeats.map((seatNum, i) => {
+  const p = passengers[i];
+  return {
+    seatNumber: seatNum,
+    fullName:   p?.fullName  || "Guest",
+    age:        p?.age       || null,
+    gender:     p?.gender    || null,
+    phone:      p?.phone     || null,
+    email:      p?.email     || null,
+  };
+});
+
 
     // Transaction
     const t = await sequelize.transaction();

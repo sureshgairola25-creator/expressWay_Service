@@ -40,15 +40,17 @@ const validatePassenger = (passenger, index) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const validatePassengers = (passengers, expectedCount, label = 'seats') => {
   if (!Array.isArray(passengers) || passengers.length === 0) {
-    throw new BadRequest(`Passenger details are required (${expectedCount} passenger(s) for ${expectedCount} ${label})`);
-  }
-
-  if (passengers.length !== expectedCount) {
     throw new BadRequest(
-      `Passenger count mismatch. You selected ${expectedCount} ${label} but provided ${passengers.length} passenger(s)`
+      `At least 1 passenger detail is required`
     );
   }
-
+  // ✅ Count check removed — only validate what's provided
+  // Max check still applies
+  if (passengers.length > expectedCount) {
+    throw new BadRequest(
+      `Too many passengers. Maximum ${expectedCount} for ${expectedCount} ${label}`
+    );
+  }
   passengers.forEach((p, i) => validatePassenger(p, i));
 };
 

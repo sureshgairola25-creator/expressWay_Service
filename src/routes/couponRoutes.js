@@ -14,10 +14,10 @@ const {
 // ── Public ────────────────────────────────────────────────────────────────────
 router.get('/active', couponController.getActiveCoupons);
 router.post('/validate', validateCouponValidation, isCouponValid, couponController.validateCoupon);
+router.get('/',  getCouponsValidation,   couponController.getCoupons);
 
 // ── Admin-only ────────────────────────────────────────────────────────────────
 router.post('/',    protect, authorize('admin'), createCouponValidation, couponController.createCoupon);
-router.get('/',     protect, getCouponsValidation,   couponController.getCoupons);
 router.get('/:id',  protect, authorize('admin'), couponExists,           couponController.getCouponById);
 router.put('/:id',  protect, authorize('admin'), updateCouponValidation, couponExists, couponController.updateCoupon);
 router.delete('/:id', protect, authorize('admin'), couponExists,         couponController.deleteCoupon);
