@@ -84,6 +84,12 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
     if (!car) throw new BadRequestError('Car not found');
     const seatPrice = getSeatPriceFromCar(car);
 
+    const cabType = (car.cabType || '').toLowerCase().trim();  // ✅ loop se bahar
+    const isPersonalized = cabType === 'personalize';           // ✅ loop se bahar
+    const bookingModeSnap = car.bookingMode || (
+      cabType === 'personalize' ? 'personalized' : 'sharing_and_cabin'
+    );
+
     // ── Generate shared group ID for all trips in this batch ──────────────
     const { v4: uuidv4 } = require('uuid');
     const tripGroupId = startTimes.length > 1 ? uuidv4() : null;
@@ -92,13 +98,23 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
 
     for (const startTime of startTimes) {
       // Check duplicate per car + time
-      const existing = await tripService.findTripByCarAndDate(
-        tripData.carId, startTime
-      );
-      if (existing) {
-        throw new ConflictError(
-          `A trip already exists for this car at ${startTime}`
+      // const existing = await tripService.findTripByCarAndDate(
+      //   tripData.carId, startTime
+      // );
+      // if (existing) {
+      //   throw new ConflictError(
+      //     `A trip already exists for this car at ${startTime}`
+      //   );
+      // }
+      if (!isPersonalized) {
+        const existing = await tripService.findTripByCarAndDate(
+          tripData.carId, startTime
         );
+        if (existing) {
+          throw new ConflictError(
+            `A trip already exists for this car at ${startTime}`
+          );
+        }
       }
 
       const startDt  = new Date(startTime);
@@ -113,11 +129,11 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
 
       const duration = calculateDuration(startDt, endDt);
 
-      const cabType = (car.cabType || '').toLowerCase().trim();
-const bookingModeSnap = car.bookingMode || (
-  cabType === 'personalize' ? 'personalized' : 'sharing_and_cabin'
-);
-const isPersonalized = cabType === 'personalize';  // ← use cabType directly, not bookingModeSnap
+//       const cabType = (car.cabType || '').toLowerCase().trim();
+// const bookingModeSnap = car.bookingMode || (
+//   cabType === 'personalize' ? 'personalized' : 'sharing_and_cabin'
+// );
+// const isPersonalized = cabType === 'personalize';  // ← use cabType directly, not bookingModeSnap
 
 const tripToCreate = {
   startLocationId:      tripData.startLocationId,
