@@ -125,6 +125,23 @@ const Booking = sequelize.define('Booking', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  paymentMode: {
+    type: DataTypes.ENUM('full', 'partial'),
+    allowNull: true,
+    field: 'payment_mode',
+  },
+  paidAmount: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    defaultValue: 0,
+    field: 'paid_amount',
+  },
+  remainingAmount: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    defaultValue: 0,
+    field: 'remaining_amount',
+  },
   couponId: {
   type: DataTypes.INTEGER,
   allowNull: true,
