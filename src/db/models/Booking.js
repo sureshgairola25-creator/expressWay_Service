@@ -109,6 +109,12 @@ const Booking = sequelize.define('Booking', {
     field: 'journey_date',
     comment: 'The actual date of the journey for recurring trips'
   },
+  journeyTime: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'journey_time',
+    comment: 'User-selected pickup time for personalize bookings (HH:MM)'
+  },
   cabinNumber:{
     type: DataTypes.INTEGER,
     allowNull: true,

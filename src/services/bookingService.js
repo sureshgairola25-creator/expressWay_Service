@@ -930,6 +930,7 @@ if (!isPersonalizeEligible) {
       paymentStatus:   b.paymentStatus,
       bookingStatus:   b.bookingStatus,
       journeyDate:     b.journeyDate,
+      journeyTime:     b.journeyTime || null,
       seatCount:       b.seatCount,
       cabinNumber:     b.cabinNumber,
       passengers:      b.passengers || [],   // ← returned for admin too
@@ -940,9 +941,10 @@ if (!isPersonalizeEligible) {
         phone: b.user.phoneNo,
       } : null,
       trip: b.trip ? {
-        route:   `${b.trip.startLocation?.name || ''} → ${b.trip.endLocation?.name || ''}`,
-        car:     b.trip.car?.carName || null,
-        cabType: b.trip.car?.cabType || null,
+        route:     `${b.trip.startLocation?.name || ''} → ${b.trip.endLocation?.name || ''}`,
+        startTime: b.trip.startTime || null,
+        car:       b.trip.car?.carName || null,
+        cabType:   b.trip.car?.cabType || null,
       } : null,
       pickupPoint: b.pickupPoint?.name || null,
       dropPoint:   b.dropPoint?.name   || null,
