@@ -180,21 +180,28 @@ const bookingService = {
     });
 
     const pickupPoint = await PickupPoint.findByPk(pickupPointId, {
-      attributes: ['id', 'name', 'price', 'type']
+      attributes: ['id', 'name', 'price', 'sharingPrice', 'cabinPrice', 'type']
     });
 
     // Price priority rule:
-    //   IF pickup_point_price EXISTS AND pickup_point_price < seat_price
-    //   THEN use pickup_point_price  (user gets cheaper boarding-point rate)
-    //   ELSE use seat_price          (car base price)
-    const basePricePerSeat  = parseFloat(car?.pricePerSeat || 0);
-    const pickupPointPrice  = pickupPoint?.price != null ? parseFloat(pickupPoint.price) : null;
-    // const effectivePricePerSeat = (pickupPointPrice !== null && pickupPointPrice < basePricePerSeat)
-      // ? pickupPointPrice
-      // : basePricePerSeat;
-      const effectivePricePerSeat = pickupPointPrice !== null
-  ? pickupPointPrice       // ← pickup point price takes priority
-  : basePricePerSeat;   
+    //   1. Use type-specific price (sharingPrice / cabinPrice) if set for the car's cab type
+    //   2. Fall back to the legacy general `price` field
+    //   3. Fall back to car base price
+    const basePricePerSeat = parseFloat(car?.pricePerSeat || 0);
+    const carCabType       = car?.cabType; // 'sharing', 'cabin', or 'personalize'
+
+    let pickupPointPrice = null;
+    if (carCabType === 'sharing' && pickupPoint?.sharingPrice != null) {
+      pickupPointPrice = parseFloat(pickupPoint.sharingPrice);
+    } else if (carCabType === 'cabin' && pickupPoint?.cabinPrice != null) {
+      pickupPointPrice = parseFloat(pickupPoint.cabinPrice);
+    } else if (pickupPoint?.price != null) {
+      pickupPointPrice = parseFloat(pickupPoint.price);
+    }
+
+    const effectivePricePerSeat = pickupPointPrice !== null
+      ? pickupPointPrice
+      : basePricePerSeat;
 
     const seatTotal = effectivePricePerSeat * seatRecords.length;
 

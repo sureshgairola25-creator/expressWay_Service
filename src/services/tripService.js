@@ -756,27 +756,33 @@ let pickupOverridePrice = null;
 const effectiveCabType = ride_type || t.car?.cabType;
 
 if (startId) {
-  const cheapestPickup = await PickupPoint.findOne({
+  const candidatePickups = await PickupPoint.findAll({
     where: {
       startLocationId: startId,
       isCityDefault:   true,
       status:          1,
-      price:           { [Op.not]: null },
       endLocationId:   t.endLocationId,
-      // ✅ Filter by ride type so sharing pickups don't affect cabin price
       [Op.or]: [
         { cabType: effectiveCabType },
         { cabType: 'all' }
       ]
     },
-    order: [['price', 'ASC']],
+    attributes: ['id', 'price', 'sharingPrice', 'cabinPrice'],
     raw: true,
   });
-  if (cheapestPickup?.price) {
-    const pp = parseFloat(cheapestPickup.price);
-    // ✅ For both sharing and cabin — use cheapest pickup as display price
-    // This ensures sort and filter match what user sees on frontend
-    pickupOverridePrice = pp;
+
+  // Resolve type-specific price for each pickup, then pick the minimum
+  const resolvedPrices = candidatePickups
+    .map(pp => {
+      const typeSpecific = effectiveCabType === 'cabin' ? pp.cabinPrice : pp.sharingPrice;
+      if (typeSpecific != null) return parseFloat(typeSpecific);
+      if (pp.price     != null) return parseFloat(pp.price);
+      return null;
+    })
+    .filter(p => p !== null);
+
+  if (resolvedPrices.length > 0) {
+    pickupOverridePrice = Math.min(...resolvedPrices);
   }
 }
 
@@ -858,7 +864,7 @@ const specificPickups = idsToFetch.length > 0
           { cabType: 'all' }
         ],
       },
-      attributes: ['id', 'name', 'price', 'type', 'description', 'meta', 'cabType', 'isCityDefault'],
+      attributes: ['id', 'name', 'price', 'sharingPrice', 'cabinPrice', 'type', 'description', 'meta', 'cabType', 'isCityDefault'],
       raw: true,
     })
   : [];
@@ -881,7 +887,7 @@ const defaultPickups = await PickupPoint.findAll({
       endLocationId: t.endLocationId,
     }]
   },
-  attributes: ['id', 'name', 'price', 'type', 'description', 'meta', 'cabType', 'isCityDefault', 'endLocationId'],
+  attributes: ['id', 'name', 'price', 'sharingPrice', 'cabinPrice', 'type', 'description', 'meta', 'cabType', 'isCityDefault', 'endLocationId'],
   raw: true,
   // ✅ Route-specific points take priority over start-location-wide ones
   order: [
@@ -914,12 +920,15 @@ const mergedPickupPoints = [...mergedDefaults, ...specificPickups]
   .map(p => ({
     id:            p.id,
     name:          p.name,
-    // price:         p.price != null ? parseFloat(p.price) : getDisplayPrice(t.car),
-    price: p.price != null
-      ? parseFloat(p.price)
-      : effectiveRideType === 'cabin'
+    // Resolve: type-specific price → legacy price → car base price
+    price: (() => {
+      const typeSpecific = effectiveRideType === 'cabin' ? p.cabinPrice : p.sharingPrice;
+      if (typeSpecific != null) return parseFloat(typeSpecific);
+      if (p.price      != null) return parseFloat(p.price);
+      return effectiveRideType === 'cabin'
         ? parseFloat(t.car?.pricePerCabin || 0)
-        : parseFloat(t.car?.pricePerSeat || 0),
+        : parseFloat(t.car?.pricePerSeat  || 0);
+    })(),
     description:   p.description   || null,
     meta:          p.meta          || null,
     isCityDefault: p.isCityDefault || false,

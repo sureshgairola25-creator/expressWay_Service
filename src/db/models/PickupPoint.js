@@ -18,7 +18,21 @@ const PickupPoint = sequelize.define('PickupPoint', {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: true,
     defaultValue: null,
-    comment: 'Fixed price for this pickup. NULL = use car base price'
+    comment: 'Legacy general price. Superseded by sharingPrice / cabinPrice when set'
+  },
+  sharingPrice: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    defaultValue: null,
+    field: 'sharing_price',
+    comment: 'Price override for Sharing trips. NULL = fall back to price field'
+  },
+  cabinPrice: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    defaultValue: null,
+    field: 'cabin_price',
+    comment: 'Price override for Cabin trips. NULL = fall back to price field'
   },
   type: {
     type: DataTypes.ENUM('standard', 'metro', 'railway', 'airport'),

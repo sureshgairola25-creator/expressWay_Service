@@ -315,8 +315,8 @@ getUserRides: async (userId, { page = 1, limit = 10 } = {}) => {
         { model: DropPoint,   as: 'dropPoint',   required: false },
       ],
       order:  [['id', 'DESC']],
-      offset,
-      limit: parseInt(limit, 10),
+      // offset,
+      // limit: parseInt(limit, 10),
     });
 
     // ── Reviews ───────────────────────────────────────────────────────────────
@@ -411,7 +411,7 @@ switch (booking.bookingStatus) {
         isUpcoming,                                  // ← frontend uses this to split
         journeyDate:   journeyDateStr,               // clean YYYY-MM-DD string
         journeyTime:   booking.journeyTime || null,
-        cabType:       `${trip.car?.carType || ''} (${trip.car?.carName || ''}-${trip.car?.carUniqueNumber || ''})`,
+        cabType:       `${trip.car?.carName || ''}-${trip.car?.carUniqueNumber || ''}`,
         date:          startTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
         time:          startTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
         startLocation: trip.startLocation?.name || 'Start',

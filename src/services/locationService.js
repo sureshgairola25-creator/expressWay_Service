@@ -241,6 +241,7 @@ const locationService = {
         order: [['name', 'ASC']],
       });
     } catch (e) {
+      console.error('[getPickupPointsByStartLocation] Error:', e.message, e.stack);
       throw new InternalServerError('Failed to fetch pickup points');
     }
   },
@@ -249,12 +250,14 @@ const locationService = {
     const {
       name, startLocationId,
       price         = null,
+      sharingPrice  = null,
+      cabinPrice    = null,
       type          = 'standard',
       description   = null,
       meta          = null,
       isCityDefault = false,
       cityDefaultFor = null,
-      cabType       = 'all',
+      cabType,
       status        = 1,
       endLocationId
     } = data;
@@ -262,37 +265,63 @@ const locationService = {
     if (!name?.trim())    throw new BadRequest('Pickup point name is required');
     if (!startLocationId) throw new BadRequest('startLocationId is required');
 
+    const isDefault = isCityDefault === true || isCityDefault === 'true' || isCityDefault === 1;
+
+    const parsedSharingPrice = sharingPrice !== null && sharingPrice !== undefined && sharingPrice !== ''
+      ? parseFloat(sharingPrice) : null;
+    const parsedCabinPrice = cabinPrice !== null && cabinPrice !== undefined && cabinPrice !== ''
+      ? parseFloat(cabinPrice) : null;
+
+    // When set as location default, at least one type-specific price is required
+    if (isDefault && parsedSharingPrice === null && parsedCabinPrice === null) {
+      throw new BadRequest('At least one price (Sharing or Cabin) is required when setting a location default');
+    }
+
+    // Auto-derive cabType from which type-specific prices are set
+    let effectiveCabType;
+    if (cabType && cabType !== 'all') {
+      // Explicit non-all value takes priority (e.g. 'personalize')
+      effectiveCabType = cabType;
+    } else if (parsedSharingPrice !== null && parsedCabinPrice !== null) {
+      effectiveCabType = 'all';
+    } else if (parsedSharingPrice !== null) {
+      effectiveCabType = 'sharing';
+    } else if (parsedCabinPrice !== null) {
+      effectiveCabType = 'cabin';
+    } else {
+      effectiveCabType = cabType || 'all';
+    }
+
     try {
       const startLoc = await StartLocation.findByPk(startLocationId);
       if (!startLoc) throw new NotFound('Start location not found');
 
       // Scoped by startLocationId + cabType namespace
-      const ct = cabType || 'all';
       const existing = await PickupPoint.findOne({
         where: {
           name:            name.trim(),
           startLocationId: parseInt(startLocationId),
-          cabType:         { [Op.in]: ctConflicts(ct) },
+          cabType:         { [Op.in]: ctConflicts(effectiveCabType) },
         }
       });
       if (existing) throw new BadRequest(
-        `Pickup point "${name}" already exists for this start location under ${ct === 'personalize' ? 'personalized' : 'sharing/cabin'} trips`
+        `Pickup point "${name}" already exists for this start location under ${effectiveCabType === 'personalize' ? 'personalized' : 'sharing/cabin'} trips`
       );
-
-      const isDefault = isCityDefault === true || isCityDefault === 'true' || isCityDefault === 1;
 
       const point = await PickupPoint.create({
         name:            name.trim(),
         startLocationId: parseInt(startLocationId),
-        endLocationId:   endLocationId ? parseInt(endLocationId) : null,  // ← NEW
+        endLocationId:   endLocationId ? parseInt(endLocationId) : null,
         price:           price !== null && price !== undefined && price !== ''
                            ? parseFloat(price) : null,
+        sharingPrice:    parsedSharingPrice,
+        cabinPrice:      parsedCabinPrice,
         type:            type     || 'standard',
         description:     description || null,
         meta:            meta ? (typeof meta === 'string' ? JSON.parse(meta) : meta) : null,
         isCityDefault:   isDefault,
         cityDefaultFor:  isDefault ? (cityDefaultFor || startLoc.city || null) : null,
-        cabType:         cabType  || 'all',
+        cabType:         effectiveCabType,
         status:          parseInt(status ?? 1),
       });
       return point;
@@ -303,22 +332,59 @@ const locationService = {
   },
 
   updatePickupPoint: async (id, data) => {
-    const { name, price, type, description, meta, isCityDefault, cityDefaultFor, cabType, status } = data;
+    const { name, price, sharingPrice, cabinPrice, type, description, meta, isCityDefault, cityDefaultFor, cabType, status } = data;
     if (!name?.trim()) throw new BadRequest('Name is required');
     try {
       const point = await PickupPoint.findByPk(id);
       if (!point) throw new NotFound('Pickup point not found');
+
+      // Parse type-specific prices
+      const parsedSharingPrice = sharingPrice !== undefined
+        ? (sharingPrice !== null && sharingPrice !== '' ? parseFloat(sharingPrice) : null)
+        : undefined;
+      const parsedCabinPrice = cabinPrice !== undefined
+        ? (cabinPrice !== null && cabinPrice !== '' ? parseFloat(cabinPrice) : null)
+        : undefined;
+
+      // When set as location default, at least one type-specific price is required
+      const newIsDefault = isCityDefault !== undefined
+        ? (isCityDefault === true || isCityDefault === 'true')
+        : point.isCityDefault;
+      const newSharingPriceForValidation = parsedSharingPrice !== undefined ? parsedSharingPrice : point.sharingPrice;
+      const newCabinPriceForValidation   = parsedCabinPrice   !== undefined ? parsedCabinPrice   : point.cabinPrice;
+      if (newIsDefault && newSharingPriceForValidation === null && newCabinPriceForValidation === null) {
+        throw new BadRequest('At least one price (Sharing or Cabin) is required when setting a location default');
+      }
+
+      // Auto-derive cabType when type-specific prices are provided
+      let effectiveCabType = cabType;
+      if (parsedSharingPrice !== undefined || parsedCabinPrice !== undefined) {
+        const newSharingPrice = parsedSharingPrice !== undefined ? parsedSharingPrice : point.sharingPrice;
+        const newCabinPrice   = parsedCabinPrice   !== undefined ? parsedCabinPrice   : point.cabinPrice;
+        if (newSharingPrice !== null && newCabinPrice !== null) {
+          effectiveCabType = 'all';
+        } else if (newSharingPrice !== null) {
+          effectiveCabType = 'sharing';
+        } else if (newCabinPrice !== null) {
+          effectiveCabType = 'cabin';
+        } else {
+          effectiveCabType = cabType || point.cabType || 'all';
+        }
+      }
+
       await point.update({
         name: name.trim(),
-         ...(data.endLocationId !== undefined && {endLocationId: data.endLocationId ? parseInt(data.endLocationId) : null}),
-        ...(price         !== undefined && { price: price ? parseFloat(price) : null }),
-        ...(type          !== undefined && { type }),
-        ...(description   !== undefined && { description }),
-        ...(meta          !== undefined && { meta: typeof meta === 'string' ? JSON.parse(meta) : meta }),
-        ...(isCityDefault !== undefined && { isCityDefault: isCityDefault === true || isCityDefault === 'true' }),
-        ...(cityDefaultFor !== undefined && { cityDefaultFor }),
-        ...(cabType       !== undefined && { cabType }),
-        ...(status        !== undefined && { status: parseInt(status) }),
+        ...(data.endLocationId !== undefined && { endLocationId: data.endLocationId ? parseInt(data.endLocationId) : null }),
+        ...(price              !== undefined && { price: price ? parseFloat(price) : null }),
+        ...(parsedSharingPrice !== undefined && { sharingPrice: parsedSharingPrice }),
+        ...(parsedCabinPrice   !== undefined && { cabinPrice: parsedCabinPrice }),
+        ...(type               !== undefined && { type }),
+        ...(description        !== undefined && { description }),
+        ...(meta               !== undefined && { meta: typeof meta === 'string' ? JSON.parse(meta) : meta }),
+        ...(isCityDefault      !== undefined && { isCityDefault: isCityDefault === true || isCityDefault === 'true' }),
+        ...(cityDefaultFor     !== undefined && { cityDefaultFor }),
+        ...(effectiveCabType   !== undefined && { cabType: effectiveCabType }),
+        ...(status             !== undefined && { status: parseInt(status) }),
       });
       return point;
     } catch (e) {
