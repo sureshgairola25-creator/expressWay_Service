@@ -179,7 +179,7 @@ const tripToCreate = {
 
 getAllTrips: async (query = {}) => {
   const { pickupPoint, dropPoint, date, page = 1, limit = 10, ...otherFilters } = query;
-  const where = { ...otherFilters };
+  const where = { ...otherFilters,status: true };
 
   const parsedPage  = parseInt(page,  10);
   const parsedLimit = parseInt(limit, 10);
