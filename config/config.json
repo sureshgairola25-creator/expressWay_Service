@@ -2,7 +2,7 @@
   "development": {
     "username": "dbuser",
     "password": "Welcome@2025",
-    "database": "mydb",
+    "database": "expresscab_dev",
     "host": "65.1.253.52",
     "port": 3306,
     "dialect": "mysql",

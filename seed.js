@@ -14,7 +14,7 @@ async function seedDatabase() {
     console.log('✅ MySQL connected successfully!');
     
     // Drop all tables and recreate them
-    await sequelize.sync({ force: true, transaction });
+    // await sequelize.sync({ force: true, transaction });
     console.log('✅ Database synced successfully');
 
     // Step 1: Disable foreign key checks for safe truncation

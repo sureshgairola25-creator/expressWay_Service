@@ -3,7 +3,7 @@ const db = require('./models');
 const seed = async () => {
   try {
     // Clear existing data
-    await db.sequelize.sync({ force: true });
+    // await db.sequelize.sync({ force: true });
 
     // Create Start Locations
     const delhi = await db.StartLocation.create({ name: 'New Delhi' });
