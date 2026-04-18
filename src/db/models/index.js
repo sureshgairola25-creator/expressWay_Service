@@ -160,10 +160,10 @@ SeatPricing.belongsTo(Trip, {
 });
 
 // Booking-Trip Associations
-Trip.hasMany(Booking, { 
+Trip.hasMany(Booking, {
   foreignKey: 'tripId',
   as: 'bookings',
-  onDelete: 'CASCADE' 
+  onDelete: 'RESTRICT',
 });
 
 Booking.belongsTo(Trip, { 

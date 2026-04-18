@@ -1293,13 +1293,34 @@ if (activeTypes.length > 0) {
   },
 
   deleteTrip: async (id) => {
-    const trip = await tripService.getTripById(id);
-    await SeatPricing.destroy({ where: { tripId: id } });
-      await Seat.destroy({ where: { tripId: id } });
-    await BookedSeat.destroy({ where: { tripId: id } });
-    await Booking.destroy({ where: { tripId: id } });
-    await Trip.destroy({ where: { id } });
-    return { message: 'Trip deleted successfully' };
+    await tripService.getTripById(id); // throws NotFoundError if missing
+    return await sequelize.transaction(async (transaction) => {
+      // Cancel active bookings first — records must survive for audit trail
+      await Booking.update(
+        { bookingStatus: 'cancelled' },
+        { where: { tripId: id, bookingStatus: { [Op.notIn]: ['cancelled', 'expired'] } }, transaction }
+      );
+
+      // Soft-cancel seat records instead of hard-deleting them
+      await BookedSeat.update(
+        { isCancelled: true },
+        { where: { tripId: id, isCancelled: false }, transaction }
+      );
+
+      await SeatPricing.destroy({ where: { tripId: id }, transaction });
+      await Seat.destroy({ where: { tripId: id }, transaction });
+
+      // Hard-delete the Trip only when no booking history exists.
+      // If bookings exist, soft-delete to prevent the DB CASCADE from wiping them.
+      const bookingCount = await Booking.count({ where: { tripId: id }, transaction });
+      if (bookingCount > 0) {
+        await Trip.update({ status: false }, { where: { id }, transaction });
+      } else {
+        await Trip.destroy({ where: { id }, transaction });
+      }
+
+      return { message: 'Trip deleted successfully' };
+    });
   },
   syncTripGroup: async (tripGroupId, newStartTimes = [], newEndTime, sharedData) => {
   return await sequelize.transaction(async (transaction) => {
@@ -1370,16 +1391,32 @@ if (activeTypes.length > 0) {
     let deletedCount = 0;
     for (const hhmm of toDelete) {
       const trip = existingMap.get(hhmm);
-      // Clean up related records first
+
+      // Cancel active bookings before touching any seat data
+      await Booking.update(
+        { bookingStatus: 'cancelled' },
+        { where: { tripId: trip.id, bookingStatus: { [Op.notIn]: ['cancelled', 'expired'] } }, transaction }
+      );
+
+      // Soft-cancel BookedSeat records — preserve for audit trail
+      await BookedSeat.update(
+        { isCancelled: true },
+        { where: { tripId: trip.id, isCancelled: false }, transaction }
+      );
+
       await SeatPricing.destroy({ where: { tripId: trip.id }, transaction });
-      await BookedSeat.destroy({ where: { tripId: trip.id }, transaction });
-      await Booking.destroy({ where: { tripId: trip.id }, transaction });
-      await Seat.destroy({ where: { tripId: trip.id }, transaction });
-      await Trip.destroy({ where: { id: trip.id }, transaction });
+
+      // Hard-delete only when no booking history exists; otherwise soft-delete
+      // to prevent the DB CASCADE from wiping booking records.
+      const bookingCount = await Booking.count({ where: { tripId: trip.id }, transaction });
+      if (bookingCount > 0) {
+        await Trip.update({ status: false }, { where: { id: trip.id }, transaction });
+      } else {
+        await Seat.destroy({ where: { tripId: trip.id }, transaction });
+        await Trip.destroy({ where: { id: trip.id }, transaction });
+      }
       deletedCount++;
     }
-
-    // ── Step 2: UPDATE kept trips with new shared data ────────────────────
     let keptCount = 0;
     for (const hhmm of toKeep) {
       const trip = existingMap.get(hhmm);

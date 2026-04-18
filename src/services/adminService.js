@@ -6,7 +6,7 @@ const adminService = {
   // 1) totals
   const [totalUsers, totalBookings, totalTrips, totalCars] = await Promise.all([
     User.count({where: {role: 'user'}}),
-    Booking.count(),
+    Booking.count({ where: { bookingStatus: { [Op.notIn]: ['cancelled', 'failed', 'expired'] } } }),
     Trip.count(),
     Car.count(),
   ]);
@@ -50,9 +50,10 @@ const adminService = {
       },
     ],
     where: {
-      bookingStatus: 'confirmed'  // Only include confirmed bookings
+      bookingStatus: { [Op.in]: ['confirmed', 'completed'] },
     },
     group: [Sequelize.literal("route")],
+    having: Sequelize.literal('route IS NOT NULL'),
     order: [[Sequelize.fn('SUM', Sequelize.col('Booking.total_amount')), 'DESC']],
     raw: true,
   });
@@ -62,6 +63,19 @@ const adminService = {
     total: Number(r.total),
   }));
 
+  // 4) booking breakdown by status
+  const bookingBreakdownRaw = await Booking.findAll({
+    attributes: [
+      'bookingStatus',
+      [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'],
+    ],
+    group: ['bookingStatus'],
+    raw: true,
+  });
+  const bookingBreakdown = Object.fromEntries(
+    bookingBreakdownRaw.map(r => [r.bookingStatus, Number(r.count)])
+  );
+
   return {
     totalUsers,
     totalBookings,
@@ -69,6 +83,7 @@ const adminService = {
     totalCars,
     tripsPerWeek,
     revenueByRoute,
+    bookingBreakdown,
   };
     }
 };
