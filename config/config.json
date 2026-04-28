@@ -1,9 +1,11 @@
+
+
 {
   "development": {
-    "username": "dbuser",
-    "password": "Welcome@2025",
-    "database": "mydb",
-    "host": "65.1.253.52",
+    "username": "admin",
+    "password": "fpikZAzA7SksB5d58BPT",
+    "database": "expressDevDB",
+    "host": "express-dev-db.ctiigaseybrr.ap-south-1.rds.amazonaws.com",
     "port": 3306,
     "dialect": "mysql",
     "timezone": "+05:30",
