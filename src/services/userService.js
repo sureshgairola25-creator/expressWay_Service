@@ -638,6 +638,180 @@ verifyResetOtp: async (identifier, otp) => {
 
     return { token: generateToken(user) };
   },
+
+  // ── MOBILE APP AUTH ──────────────────────────────────────────────────────────
+// Add these 3 methods inside the userService object
+
+// ── 1. Send OTP (mobile only) ─────────────────────────────────────────────────
+sendMobileOtp: async (phoneNo) => {
+  if (!phoneNo || !/^\d{10}$/.test(phoneNo.trim())) {
+    throw new BadRequest('Please provide a valid 10-digit mobile number');
+  }
+
+  const normalizedPhone = phoneNo.trim();
+  const otp             = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiration      = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  let user = await User.findOne({ where: { phoneNo: normalizedPhone } });
+  let isExistingUser = false;
+
+  if (user) {
+    // Existing user (verified or unverified) — update OTP
+    isExistingUser = user.isVerified; // true only if fully registered
+    user.token           = otp;
+    user.tokenExpiration = expiration;
+    await user.save();
+  } else {
+    // New user — create a stub record
+    user = await User.create({
+      phoneNo:         normalizedPhone,
+      token:           otp,
+      tokenExpiration: expiration,
+    });
+    isExistingUser = false;
+  }
+console.log(otp);
+
+  await sendSMS(normalizedPhone, { otp });
+
+  return {
+    success: true,
+    status:  isExistingUser ? 'existing_user' : 'new_user',
+    message: 'OTP sent successfully',
+  };
+},
+
+// ── 2. Verify OTP → issue 90-day auth token ────────────────────────────────────
+verifyMobileOtp: async (phoneNo, otp) => {
+  if (!phoneNo || !otp) {
+    throw new BadRequest('Mobile number and OTP are required');
+  }
+
+  const normalizedPhone = phoneNo.trim();
+
+  const user = await User.findOne({ where: { phoneNo: normalizedPhone } });
+
+  if (!user) {
+    throw new NotFound('No account found with this mobile number');
+  }
+
+  if (!user.token || user.token !== otp.toString()) {
+    throw new BadRequest('Invalid OTP. Please enter the correct OTP.');
+  }
+
+  if (new Date() > user.tokenExpiration) {
+    throw new BadRequest('OTP has expired. Please request a new one.');
+  }
+
+  // Mark verified, clear OTP
+  user.isVerified      = true;
+  user.token           = null;
+  user.tokenExpiration = null;
+  await user.save();
+
+  // 90-day token — long-lived for mobile app
+  const appToken = jwt.sign(
+    { id: user.id, phoneNo: user.phoneNo, role: user.role || 'user' },
+    process.env.JWT_SECRET,
+    { expiresIn: '90d' }
+  );
+
+  // Store as a refresh token for revocation support
+  const { RefreshToken } = require('../db/models');
+  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+  await RefreshToken.destroy({ where: { userId: user.id, isRevoked: true } }); // housekeeping
+  await RefreshToken.create({ userId: user.id, token: appToken, expiresAt });
+
+  user.password = undefined;
+
+  return {
+    success:    true,
+    token:      appToken,
+    expiresIn:  '90d',
+    status:     user.firstName ? 'existing_user' : 'new_user', // app uses this to route to profile setup
+    user,
+  };
+},
+
+// ── 3. Validate Token (app launch check) ─────────────────────────────────────
+validateAppToken: async (tokenStr) => {
+  if (!tokenStr) {
+    throw new BadRequest('Token is required');
+  }
+
+  // Check in-memory blacklist first (logout tokens)
+  if (tokenBlacklist.has(tokenStr)) {
+    return { valid: false, reason: 'Token has been revoked' };
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(tokenStr, process.env.JWT_SECRET);
+  } catch (err) {
+    return {
+      valid:  false,
+      reason: err.name === 'TokenExpiredError' ? 'Token expired' : 'Invalid token',
+    };
+  }
+
+  // Check DB — was it revoked (e.g., user logged out)?
+  const { RefreshToken } = require('../db/models');
+  const stored = await RefreshToken.findOne({
+    where: { token: tokenStr, userId: decoded.id, isRevoked: false },
+  });
+
+  if (!stored) {
+    return { valid: false, reason: 'Token has been revoked or not found' };
+  }
+
+  if (new Date() > new Date(stored.expiresAt)) {
+    return { valid: false, reason: 'Token expired' };
+  }
+
+  return { valid: true };
+},
+// ── Resend OTP (mobile app) ────────────────────────────────────────────────────
+resendMobileOtp: async (phoneNo) => {
+  if (!phoneNo || !/^\d{10}$/.test(phoneNo.trim())) {
+    throw new BadRequest('Please provide a valid 10-digit mobile number');
+  }
+
+  const normalizedPhone = phoneNo.trim();
+
+  const user = await User.findOne({ where: { phoneNo: normalizedPhone } });
+
+  if (!user) {
+    throw new NotFound('No account found with this mobile number. Please initiate sign-up first.');
+  }
+
+  // ── Cooldown check: prevent OTP spam ─────────────────────────────────────────
+  // If a valid (non-expired) OTP was sent less than 60 seconds ago → block resend
+  const COOLDOWN_SECONDS = 60;
+  if (user.tokenExpiration) {
+    const otpCreatedAt  = new Date(user.tokenExpiration).getTime() - 10 * 60 * 1000; // expiry - 10min = when it was issued
+    const secondsSince  = Math.floor((Date.now() - otpCreatedAt) / 1000);
+    if (secondsSince < COOLDOWN_SECONDS) {
+      throw new BadRequest(
+        `Please wait ${COOLDOWN_SECONDS - secondsSince} seconds before requesting a new OTP.`
+      );
+    }
+  }
+
+  // Generate fresh OTP
+  const otp        = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiration = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  user.token           = otp;
+  user.tokenExpiration = expiration;
+  await user.save();
+
+  await sendSMS(normalizedPhone, { otp });
+
+  return {
+    success: true,
+    message: 'OTP resent successfully',
+  };
+},
 };
 const normalizeIdentifier = (identifier) => {
   const isEmail = identifier.includes('@');

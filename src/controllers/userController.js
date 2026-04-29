@@ -124,6 +124,49 @@ resetPassword: asyncHandler(async (req, res) => {
   const result = await userService.resetPassword(identifier, otp, newPassword);
   res.status(200).json(result);
 }),
+
+// Send OTP
+sendMobileOtp: async (req, res, next) => {
+  try {
+    const { phoneNo } = req.body;
+    const result = await userService.sendMobileOtp(phoneNo);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+},
+
+// Verify OTP
+verifyMobileOtp: async (req, res, next) => {
+  try {
+    const { phoneNo, otp } = req.body;
+    const result = await userService.verifyMobileOtp(phoneNo, otp);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+},
+
+// Validate token (app launch)
+validateAppToken: async (req, res, next) => {
+  try {
+    const { token } = req.body;
+    const result = await userService.validateAppToken(token);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+},
+
+resendMobileOtp: async (req, res, next) => {
+  try {
+    const { phoneNo } = req.body;
+    const result = await userService.resendMobileOtp(phoneNo);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+},
 };
 
 module.exports = userController;

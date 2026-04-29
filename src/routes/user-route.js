@@ -30,5 +30,11 @@ router.post('/logout', protect, userController.logout);
 
 // ── Admin-only ────────────────────────────────────────────────────────────────
 router.get('/users', protect, authorize('admin'), userController.getUsers);
+// ── mobile related APIs-only ────────────────────────────────────────────────────────────────
+
+router.post('/send-otp',      userController.sendMobileOtp);
+router.post('/verify-otp',    userController.verifyMobileOtp);
+router.post('/validate-token', userController.validateAppToken);
+router.post('/resend-otp', userController.resendMobileOtp);
 
 module.exports = router;
