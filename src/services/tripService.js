@@ -9,13 +9,12 @@ const {
   DropPoint,
   BookedSeat,
   Booking,
-  Meal,
   sequelize
 } = require('../db/models');
-const { Op, Sequelize,literal } = require('sequelize');
+const { Op } = require('sequelize');
 const { NotFound } = require('http-errors');
 const { BadRequestError, ConflictError } = require('../utils/errors');
-const { calculateDuration, toIST, nowIST, toISTString, toISTLuxon } = require('../utils/dateUtils');
+const { calculateDuration } = require('../utils/dateUtils');
 
 const tripService = {
   createTrip: async (data, options = {}) => {
@@ -30,6 +29,29 @@ const tripService = {
 
     if (tripData.startTime && tripData.endTime) {
       tripData.duration = calculateDuration(tripData.startTime, tripData.endTime);
+    }
+
+    if (!tripData.bookingModeSnapshot) {
+      throw new BadRequestError('bookingModeSnapshot is required');
+    }
+    if (tripData.bookingModeSnapshot === 'sharing_and_cabin') {
+      if (!tripData.totalSeatsSnapshot) {
+        throw new BadRequestError('totalSeatsSnapshot is required for sharing_and_cabin trips');
+      }
+      if (!tripData.seatsPerCabinSnapshot) {
+        throw new BadRequestError('seatsPerCabinSnapshot is required for sharing_and_cabin trips');
+      }
+      if (tripData.availableSeats !== tripData.totalSeatsSnapshot) {
+        throw new BadRequestError('availableSeats must equal totalSeatsSnapshot at trip creation');
+      }
+    }
+    if (tripData.bookingModeSnapshot === 'personalized') {
+      if (tripData.totalSeatsSnapshot !== 1) {
+        throw new BadRequestError('totalSeatsSnapshot must be 1 for personalized trips');
+      }
+      if (tripData.availableSeats !== 1) {
+        throw new BadRequestError('availableSeats must be 1 for personalized trips');
+      }
     }
 
     return await Trip.create(tripData, options);
@@ -86,9 +108,9 @@ createTripWithSeats: async (tripData, seats, meals = []) => {
 
     const cabType = (car.cabType || '').toLowerCase().trim();  // ✅ loop se bahar
     const isPersonalized = cabType === 'personalize';           // ✅ loop se bahar
-    const bookingModeSnap = car.bookingMode || (
-      cabType === 'personalize' ? 'personalized' : 'sharing_and_cabin'
-    );
+    const bookingModeSnap = cabType === 'personalize'
+      ? 'personalized'
+      : 'sharing_and_cabin';
 
     // ── Generate shared group ID for all trips in this batch ──────────────
     const { v4: uuidv4 } = require('uuid');
@@ -149,11 +171,8 @@ const tripToCreate = {
   repeatType:           tripData.repeatType  ?? 'daily',
   meals:                meals.length > 0 ? meals : null,
   tripGroupId,
-  // ✅ FIX — explicit values, no undefined
   bookingModeSnapshot:  bookingModeSnap,
-  totalSeatsSnapshot:   isPersonalized ? null : (car.totalSeats || 0),
-  seatsPerCabinSnapshot: isPersonalized ? null : (car.cabinCapacity || null),
-  availableSeats:       isPersonalized ? 1    : (car.totalSeats || 0),
+  ...buildSeatSnapshot(bookingModeSnap, car),
 };
 
       const trip = await tripService.createTrip(tripToCreate, { transaction });
@@ -404,8 +423,12 @@ getAllTrips: async (query = {}) => {
     required: false
   }
       ],
-      attributes: ['id', 'pickupPoints', 'dropPoints', 'startLocationId', 'endLocationId',
-  'startTime', 'endTime', 'duration', 'status', 'meals', 'is_fully_booked']
+      attributes: [
+        'id', 'pickupPoints', 'dropPoints', 'startLocationId', 'endLocationId',
+        'startTime', 'endTime', 'duration', 'status', 'meals',
+        'isRecurring', 'repeatType', 'tripGroupId',
+        'availableSeats', 'totalSeatsSnapshot', 'seatsPerCabinSnapshot', 'bookingModeSnapshot',
+      ]
     });
 
     if (!trip) throw new NotFound('Trip not found');
@@ -526,12 +549,12 @@ getAllTrips: async (query = {}) => {
       if (data.carId && data.carId !== trip.carId) {
         const newCar = await Car.findByPk(data.carId, { transaction });
         if (newCar) {
-          const isPersonalize = (newCar.cabType || '').toLowerCase() === 'personalize';
+          const newBookingMode = (newCar.cabType || '').toLowerCase() === 'personalize'
+            ? 'personalized'
+            : 'sharing_and_cabin';
           await trip.update({
-            bookingModeSnapshot: isPersonalize ? 'personalized' : 'sharing_and_cabin',
-            totalSeatsSnapshot: isPersonalize ? null : (newCar.totalSeats || 0),
-            seatsPerCabinSnapshot: isPersonalize ? null : (newCar.cabinCapacity || null),
-            availableSeats: isPersonalize ? 1 : (newCar.totalSeats || 0),
+            bookingModeSnapshot: newBookingMode,
+            ...buildSeatSnapshot(newBookingMode, newCar),
           }, { transaction });
         }
       }
@@ -974,37 +997,37 @@ const availableCabins = cabType === 'cabin'
       filteredTrips.push({
         trip_id:        t.id,
         id:             t.id,
-        startLocation:  t.startLocation,
-        endLocation:    t.endLocation,
+        // startLocation:  t.startLocation,
+        // endLocation:    t.endLocation,
         startTime:      t.startTime,
         endTime:        t.endTime,
         duration:       t.duration,
-        isRecurring:    t.isRecurring || false,
+        // isRecurring:    t.isRecurring || false,
         availableSeats: leftSeats.length,
         availableCabins,
-        bookedCabinNumbers,
-        seatsInfo,
-        pickupPoints:   mergedPickupPoints,
-        dropPoints:     dropPointsArr,
-        meals:          t.meals || [],
-        carInfo: {
-          id:                 t.car?.id,
-          name:               t.car?.carName,
-          type:               t.car?.carType,
-          class:              t.car?.class,
-          totalSeats:         t.car?.totalSeats,
-          registrationNumber: t.car?.registrationNumber,
-          carUniqueNumber:    t.car?.carUniqueNumber,
-          cabType:            t.car?.cabType,
-          availableModes:     getCarModes(t.car),
-          vehicleCategory:    t.car?.vehicleCategory || null,
-          pricePerSeat:       t.car?.pricePerSeat  != null ? parseFloat(t.car.pricePerSeat)  : null,
-          pricePerCabin:      t.car?.pricePerCabin != null ? parseFloat(t.car.pricePerCabin) : null,
-          cabinCapacity:      t.car?.cabinCapacity,
-          totalCabins:        t.car?.totalCabins,
-          pricePerCar:        t.car?.pricePerCar   != null ? parseFloat(t.car.pricePerCar)   : null,
-          imageUrl:           t.car?.imageUrl,
-        },
+        // bookedCabinNumbers,
+        // seatsInfo,
+        // pickupPoints:   mergedPickupPoints,
+        // dropPoints:     dropPointsArr,
+        // meals:          t.meals || [],
+        // carInfo: {
+        //   id:                 t.car?.id,
+        //   name:               t.car?.carName,
+        //   type:               t.car?.carType,
+        //   class:              t.car?.class,
+        //   totalSeats:         t.car?.totalSeats,
+        //   registrationNumber: t.car?.registrationNumber,
+        //   carUniqueNumber:    t.car?.carUniqueNumber,
+        //   cabType:            t.car?.cabType,
+        //   availableModes:     getCarModes(t.car),
+        //   vehicleCategory:    t.car?.vehicleCategory || null,
+        //   pricePerSeat:       t.car?.pricePerSeat  != null ? parseFloat(t.car.pricePerSeat)  : null,
+        //   pricePerCabin:      t.car?.pricePerCabin != null ? parseFloat(t.car.pricePerCabin) : null,
+        //   cabinCapacity:      t.car?.cabinCapacity,
+        //   totalCabins:        t.car?.totalCabins,
+        //   pricePerCar:        t.car?.pricePerCar   != null ? parseFloat(t.car.pricePerCar)   : null,
+        //   imageUrl:           t.car?.imageUrl,
+        // },
         // ── Pricing fields (consistent across listing, vehicle selection, summary) ──
         seatsPerCabinSnapshot: t.seatsPerCabinSnapshot || null,
         seat_price:         t.car?.pricePerSeat  != null ? parseFloat(t.car.pricePerSeat)  : null,
@@ -1012,11 +1035,11 @@ const availableCabins = cabType === 'cabin'
         pickup_price:       pickupOverridePrice,   // null if no cheaper pickup exists
         // final_display_price: pickup_price if cheaper, else seat/cabin price
         final_display_price: displayPrice,
-        displayPrice,
-        available_modes:    getCarModes(t.car),
-        requested_ride_type: ride_type || null,
-        createdAt: t.createdAt,
-        updatedAt: t.updatedAt,
+        // displayPrice,
+        // available_modes:    getCarModes(t.car),
+        // requested_ride_type: ride_type || null,
+        // createdAt: t.createdAt,
+        // updatedAt: t.updatedAt,
       });
     }
 
@@ -1462,21 +1485,24 @@ if (activeTypes.length > 0) {
         throw new ConflictError(`A trip already exists for this car at ${fullDatetime}`);
       }
 
+      const isPersonalizedCar = (car.cabType || '').toLowerCase() === 'personalize';
       const newTrip = await Trip.create({
         // Inherit all shared fields from base trip
-        startLocationId: sharedData.startLocationId || baseTrip.startLocationId,
-        endLocationId:   sharedData.endLocationId   || baseTrip.endLocationId,
-        pickupPoints:    sharedData.pickupPoints     || baseTrip.pickupPoints,
-        dropPoints:      sharedData.dropPoints       || baseTrip.dropPoints,
-        carId:           car.id,
-        startTime:       startDt,
-        endTime:         getTripEndTime(startDt),
-        duration:        getDuration(startDt),
-        status:          sharedData.status ?? baseTrip.status,
-        isRecurring:     baseTrip.isRecurring,
-        repeatType:      baseTrip.repeatType,
-        meals:           sharedData.meals || baseTrip.meals,
-        tripGroupId,     // ← same group ID — Rule 3
+        startLocationId:      sharedData.startLocationId || baseTrip.startLocationId,
+        endLocationId:        sharedData.endLocationId   || baseTrip.endLocationId,
+        pickupPoints:         sharedData.pickupPoints    || baseTrip.pickupPoints,
+        dropPoints:           sharedData.dropPoints      || baseTrip.dropPoints,
+        carId:                car.id,
+        startTime:            startDt,
+        endTime:              getTripEndTime(startDt),
+        duration:             getDuration(startDt),
+        status:               sharedData.status ?? baseTrip.status,
+        isRecurring:          baseTrip.isRecurring,
+        repeatType:           baseTrip.repeatType,
+        meals:                sharedData.meals || baseTrip.meals,
+        tripGroupId,
+        bookingModeSnapshot:   isPersonalizedCar ? 'personalized' : 'sharing_and_cabin',
+        ...buildSeatSnapshot(isPersonalizedCar ? 'personalized' : 'sharing_and_cabin', car),
       }, { transaction });
 
       // Create seats for new trip — copy structure from base trip's seats
@@ -1538,6 +1564,42 @@ const syncSeats = async (tripId, seatsInfo, carId, transaction) => {
   }
 };
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: build seat snapshot fields — single source of truth for all writes
+//
+// Rules:
+//   personalized       → totalSeats=1, seatsPerCabin=null, available=1
+//   sharing_and_cabin  → totalSeats=car.totalSeats (required >0),
+//                        seatsPerCabin=car.cabinCapacity (required >0),
+//                        available=totalSeats
+// ─────────────────────────────────────────────────────────────────────────────
+function buildSeatSnapshot(bookingMode, car) {
+  if (bookingMode === 'personalized') {
+    return {
+      totalSeatsSnapshot:    1,
+      seatsPerCabinSnapshot: null,
+      availableSeats:        1,
+    };
+  }
+
+  // sharing_and_cabin
+  const totalSeats = parseInt(car.totalSeats) || 0;
+  const cabinCap   = parseInt(car.cabinCapacity) || 0;
+
+  if (!totalSeats) {
+    throw new BadRequestError('Car must have totalSeats configured for sharing_and_cabin trips');
+  }
+  if (!cabinCap) {
+    throw new BadRequestError('Car must have cabinCapacity configured for sharing_and_cabin trips');
+  }
+
+  return {
+    totalSeatsSnapshot:    totalSeats,
+    seatsPerCabinSnapshot: cabinCap,
+    availableSeats:        totalSeats,
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: derive seat price from car based on cab type or requested ride_type

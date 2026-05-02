@@ -32,6 +32,7 @@ const locationService = {
   getAllStartLocations: async () => {
     return StartLocation.findAll({
       where: { location_type: { [Op.in]: ['shared', 'all'] } },
+      attributes: ['id', 'name'],
       order: [['name', 'ASC']],
     });
   },
@@ -116,10 +117,13 @@ const locationService = {
           startLocationId: parseInt(startLocationId),
           location_type:   { [Op.in]: ['shared', 'all'] },
         },
+        attributes: ['id', 'name'],
         order: [['name', 'ASC']],
       });
       return locations;
     } catch (e) {
+      console.log(e);
+      
       throw new InternalServerError('Failed to fetch end locations');
     }
   },
@@ -238,6 +242,7 @@ const locationService = {
     try {
       return await PickupPoint.findAll({
         where: { startLocationId: parseInt(startLocationId) },
+        attributes: ['id', 'name'],
         order: [['name', 'ASC']],
       });
     } catch (e) {
@@ -411,6 +416,7 @@ const locationService = {
     try {
       return await DropPoint.findAll({
         where: { endLocationId: parseInt(endLocationId) },
+        attributes: ['id', 'name'],
         order: [['name', 'ASC']],
       });
     } catch (e) {
