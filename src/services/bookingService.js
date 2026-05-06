@@ -267,8 +267,11 @@ const bookingService = {
     transaction: t
   });
 
-  if (!freshTrip || freshTrip.availableSeats == null) {
+  if (!freshTrip) {
     throw new BadRequest('Trip not found');
+  }
+  if (freshTrip.availableSeats == null) {
+    throw new BadRequest('Trip seat availability is not configured. Please contact support.');
   }
   if (freshTrip.availableSeats < selectedSeats.length) {
     throw new BadRequest(
@@ -351,7 +354,8 @@ await Trip.decrement('availableSeats', {
       cabinNumber, cabinCapacity, cabinCount = 1,
       totalAmount, paidAmount, paymentMode = 'full',
       customerEmail, customerPhone, selectedMeal,
-      journeyDate,
+      journeyDate,  discountAmount = 0,   // ← add this
+  couponCode = null, finalPayableAmount,   // ← add this
       passengers = [],   // one per seat in the cabin
     } = bookingData;
 const bookedCabinCount = parseInt(cabinCount) || 1;
@@ -413,10 +417,37 @@ const effectivePricePerCabin = pickupPtPrice !== null
     `(${bookedCabinCount} cabin${bookedCabinCount > 1 ? 's' : ''} × ₹${effectivePricePerCabin})`
   );
 }
-    const effectiveFinal = parseFloat(totalAmount);
-    if (paymentMode === 'full' && Math.abs(parseFloat(paidAmount) - effectiveFinal) > 0.01) {
-      throw new BadRequest('For full payment, paidAmount must equal totalAmount');
-    }
+    // const effectiveFinal = parseFloat(totalAmount);
+    // if (paymentMode === 'full' && Math.abs(parseFloat(paidAmount) - effectiveFinal) > 0.01) {
+    //   throw new BadRequest('For full payment, paidAmount must equal totalAmount');
+    // }
+    // ── Discount / coupon handling ────────────────────────────────────
+const discount = parseFloat(discountAmount) || 0;
+const effectiveFinal = parseFloat(totalAmount) - discount;  // 2979 - 100 = 2879
+
+// Validate that finalPayableAmount matches what we calculate
+const clientFinalPayable = parseFloat(finalPayableAmount || totalAmount);
+if (Math.abs(effectiveFinal - clientFinalPayable) > 0.01) {
+  throw new BadRequest(
+    `Payable amount mismatch. Expected ₹${effectiveFinal} after discount of ₹${discount}`
+  );
+}
+
+// Full payment: paidAmount must equal the discounted total
+if (paymentMode === 'full' && Math.abs(parseFloat(paidAmount) - effectiveFinal) > 0.01) {
+  throw new BadRequest('For full payment, paidAmount must equal totalAmount after discount');
+}
+
+// Partial payment: paidAmount must be less than effectiveFinal (not zero, not overpaying)
+if (paymentMode === 'partial') {
+  const paid = parseFloat(paidAmount);
+  if (paid <= 0) {
+    throw new BadRequest('paidAmount must be greater than 0 for partial payment');
+  }
+  if (paid >= effectiveFinal) {
+    throw new BadRequest('For partial payment, paidAmount must be less than total payable amount');
+  }
+}
 
     // Get seats in this cabin
     const capacity     = parseInt(cabinCapacity || trip.car?.cabinCapacity || 1);
@@ -437,7 +468,7 @@ for (let i = 0; i < bookedCabinCount; i++) {
 const cabinSeats = allSeats.filter(s => cabinSeatNumbers.includes(s.seatNumber));
 
 
-    const amounts = buildPaymentAmounts(totalAmount, paidAmount, paymentMode);
+    const amounts = buildPaymentAmounts(effectiveFinal, paidAmount, paymentMode);
 
     // Sanitize passengers — link each to a cabin seat
     const sanitizedPassengers = sanitizePassengers(passengers, cabinSeatNumbers);
@@ -457,9 +488,12 @@ const cabinSeats = allSeats.filter(s => cabinSeatNumbers.includes(s.seatNumber))
 
   const seatsNeeded = freshTrip.seatsPerCabinSnapshot || capacity;
 
-  if (freshTrip.availableSeats == null || freshTrip.availableSeats < seatsNeeded) {
+  if (freshTrip.availableSeats == null) {
+    throw new BadRequest('Trip seat availability is not configured. Please contact support.');
+  }
+  if (freshTrip.availableSeats < seatsNeeded) {
     throw new BadRequest(
-      `Not enough seats for cabin booking. Available: ${freshTrip.availableSeats ?? 0}, needed: ${seatsNeeded}`
+      `Not enough seats for cabin booking. Available: ${freshTrip.availableSeats}, needed: ${seatsNeeded}`
     );
   }
       const bookingId = await generateNextBookingId();
@@ -491,7 +525,11 @@ const cabinSeats = allSeats.filter(s => cabinSeatNumbers.includes(s.seatNumber))
           passengers: sanitizedPassengers.map(p => p.fullName),
           ...(selectedMeal?.price && {
             meal: { type: selectedMeal.type, price: selectedMeal.price }
-          })
+          }),
+            discountAmount: discount,
+            couponCode: couponCode || null,
+            finalPayableAmount: effectiveFinal,
+
         },
       }, { transaction: t });
 
@@ -557,7 +595,8 @@ initiatePersonalizeBooking: async (bookingData) => {
     tripId,
 
     // ── Personalize uses manual address — NO pickupPointId/dropPointId ────────
-    pickupAddress,        // FREE-TEXT address entered by user e.g. "A-12, Sector 62, Noida"
+    pickupAddress,  
+    dropAddress,      // FREE-TEXT address entered by user e.g. "A-12, Sector 62, Noida"
     pickupPointId = null, // kept for DB compatibility, always null for personalize
     dropPointId   = null, // kept for DB compatibility, always null for personalize
 
@@ -643,16 +682,25 @@ if (!isPersonalizeEligible) {
   const expectedTotal = parseFloat(
     (carBasePrice + gstAmount - discountAmount).toFixed(2)
   );
-  if (Math.abs(parseFloat(totalAmount) - expectedTotal) > 0.01) {
-    throw new BadRequest(
-      `Total amount mismatch. Expected ₹${expectedTotal}`
-    );
+ if (paymentMode === 'full' && Math.abs(parseFloat(paidAmount) - expectedTotal) > 0.01) {
+  throw new BadRequest('For full payment, paidAmount must equal totalAmount after discount');
+}
+
+// Partial payment: paidAmount must be > 0 and < expectedTotal
+if (paymentMode === 'partial') {
+  const paid = parseFloat(paidAmount);
+  if (paid <= 0) {
+    throw new BadRequest('paidAmount must be greater than 0 for partial payment');
   }
+  if (paid >= expectedTotal) {
+    throw new BadRequest('For partial payment, paidAmount must be less than total payable amount');
+  }
+}
 
   // ── Seats list ────────────────────────────────────────────────────────────────
   const allSeats       = await Seat.findAll({ where: { tripId } });
   const allSeatNumbers = allSeats.map(s => s.seatNumber);
-  const amounts        = buildPaymentAmounts(totalAmount, paidAmount, paymentMode);
+  const amounts        = buildPaymentAmounts(expectedTotal, paidAmount, paymentMode);
 
   // ── Price breakdown ───────────────────────────────────────────────────────────
   const priceBreakdown = {
@@ -661,6 +709,7 @@ if (!isPersonalizeEligible) {
     discount:     discountAmount,
     couponCode:   couponCode || null,
     totalAmount:  expectedTotal,
+      finalPayableAmount: expectedTotal,
     pickupAddress: pickupAddress.trim(),
     ...(selectedMeal?.price && {
       meal: { type: selectedMeal.type, price: parseFloat(selectedMeal.price) }
@@ -699,6 +748,9 @@ if (!isPersonalizeEligible) {
         selectedMeal:  selectedMeal || null,
         passengers:    null,
         priceBreakdown,
+        pickupAddress:pickupAddress,
+        dropAddress:dropAddress
+
       },
       { transaction: t }
     );

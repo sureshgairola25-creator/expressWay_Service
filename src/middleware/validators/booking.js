@@ -90,9 +90,9 @@ const validateCommon = (body) => {
   //   throw new BadRequest('For full payment, paidAmount must equal totalAmount');
   // }
 
-  if (paymentMode === 'partial' && parseFloat(paidAmount) >= parseFloat(totalAmount)) {
-    throw new BadRequest('For partial payment, paidAmount must be less than totalAmount');
-  }
+  // if (paymentMode === 'partial' && parseFloat(paidAmount) >= parseFloat(totalAmount)) {
+  //   throw new BadRequest('For partial payment, paidAmount must be less than totalAmount');
+  // }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

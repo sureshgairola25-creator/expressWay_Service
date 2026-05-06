@@ -1,6 +1,5 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../database');
-const { toIST } = require('../../utils/dateUtils');
 
 const Trip = sequelize.define('Trip', {
   id: {
@@ -133,6 +132,12 @@ const Trip = sequelize.define('Trip', {
     defaultValue: null,
     field: 'booking_mode_snapshot',
     comment: 'car.bookingMode captured at trip creation time',
+  },
+  isFullyBooked: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'is_fully_booked',
   },
 }, {
   tableName: 'Trips',

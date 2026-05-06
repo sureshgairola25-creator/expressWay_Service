@@ -154,6 +154,18 @@ const Booking = sequelize.define('Booking', {
   defaultValue: null,
   field: 'coupon_id'
 },
+pickupAddress: {
+  type: DataTypes.STRING,
+  allowNull: true,
+  defaultValue: null,
+  field: 'pickup_address'
+},
+dropAddress: {
+  type: DataTypes.STRING,
+  allowNull: true,
+  defaultValue: null,
+  field: 'drop_address'
+},
   
   // Future-proofing fields
   // couponId: {
