@@ -60,3 +60,4 @@ jspm_packages/
 
 # Nuxt.js build output
 .nuxt/
+config/seatnullSolution.txt

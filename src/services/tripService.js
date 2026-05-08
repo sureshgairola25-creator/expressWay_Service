@@ -1006,7 +1006,7 @@ const availableCabins = cabType === 'cabin'
         availableSeats: leftSeats.length,
         availableCabins,
         // bookedCabinNumbers,
-        // seatsInfo,
+        seatsInfo,
         // pickupPoints:   mergedPickupPoints,
         // dropPoints:     dropPointsArr,
         // meals:          t.meals || [],

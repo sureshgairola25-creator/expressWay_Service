@@ -62,6 +62,13 @@ const bookingController = {
     });
   }),
 
+  verifyPayment: asyncHandler(async (req, res) => {
+    
+    const booking = await bookingService.getPaymentStatus(req.params.orderId);
+    res.status(200).json({ success: true, data: booking });
+  }),
+  
+
   // ── GET /bookings/my-bookings (user) ──────────────────────────────────────
   getUserBookings: asyncHandler(async (req, res) => {
     // userId comes from auth middleware (req.user.id) or query param

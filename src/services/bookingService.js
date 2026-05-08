@@ -13,6 +13,8 @@ const { sequelize } = require('../db/database');
 const { Op } = require('sequelize');
 const { NotFound, BadRequest } = require('http-errors');
 const paymentService = require('./paymentService');
+const axios = require('axios');
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: generate booking ID like EC0001
@@ -763,7 +765,64 @@ if (!isPersonalizeEligible) {
     throw error;
   }
 },
- 
+getPaymentStatus: async (bookingId) => {
+  try {
+    const booking = await Booking.findOne({ 
+      where: { bookingId: bookingId }  // bookingId column se dhundho
+    });
+
+    console.log('Booking found:', booking?.id, booking?.payment_order_id);
+
+    if (!booking) {
+      return { success: false, message: 'Booking not found' };
+    }
+
+    const paymentOrderId = booking.payment_order_id || booking.paymentOrderId;
+
+    if (!paymentOrderId) {
+      return { success: false, message: 'No payment order linked to this booking' };
+    }
+
+    const headers = {
+      'x-client-id': process.env.CASHFREE_API_KEY,
+      'x-client-secret': process.env.CASHFREE_API_SECRET,
+      'x-api-version': process.env.CASHFREE_API_VERSION,
+    };
+
+    const response = await axios.get(
+      `${process.env.CASHFREE_API_URL}/orders/${paymentOrderId}/payments`,
+      { headers }
+    );
+
+    const payments = response.data;
+
+    if (!payments || payments.length === 0) {
+      return { 
+        success: true,
+        orderId: paymentOrderId, 
+        status: 'PENDING',
+        message: 'No payment attempt yet'
+      };
+    }
+
+    const lastPayment = payments[payments.length - 1];
+
+    return {
+      // orderId: lastPayment.order_id,
+      status: lastPayment.payment_status,
+      amount: lastPayment.payment_amount,
+      failureMessage: lastPayment.error_details?.error_description || null,
+    };
+
+  } catch (error) {
+    console.error('getPaymentStatus error:', error.response?.data || error.message);
+    return {
+      success: false,
+      message: error.response?.data?.message || error.message
+    };
+  }
+},
+
 
   // ── Get user bookings ──────────────────────────────────────────────────────
   getUserBookings: async (userId) => {
