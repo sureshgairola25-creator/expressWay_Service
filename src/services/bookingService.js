@@ -350,6 +350,7 @@ await Trip.decrement('availableSeats', {
   initiateCabinBooking: async (bookingData) => {
     const {
       userId, tripId, pickupPointId, dropPointId,
+      pickupAddress,dropAddress,
       cabinNumber, cabinCapacity, cabinCount = 1,
       totalAmount, paidAmount, paymentMode = 'full',
       customerEmail, customerPhone, selectedMeal,
@@ -391,9 +392,14 @@ if (existingCabinBookings.length > 0) {
   const bookedNums = existingCabinBookings.map(b => b.cabinNumber).join(', ');
   throw new BadRequest(`Cabin(s) ${bookedNums} already booked for this date`);
 }
-    const pickupPt = await PickupPoint.findByPk(pickupPointId, {
+    // const pickupPt = await PickupPoint.findByPk(pickupPointId, {
+    //   attributes: ['id', 'name', 'price', 'type']
+    // });
+    const pickupPt = pickupPointId
+  ? await PickupPoint.findByPk(pickupPointId, {
       attributes: ['id', 'name', 'price', 'type']
-    });
+    })
+  : null
 
     // Price priority rule (same as sharing):
     //   IF pickup_point_price EXISTS AND pickup_point_price < cabin_price
@@ -470,8 +476,8 @@ const cabinSeats = allSeats.filter(s => cabinSeatNumbers.includes(s.seatNumber))
         bookingId,
         userId,
         tripId,
-        pickupPointId,
-        dropPointId,
+        pickupPointId: pickupPointId || null,
+        dropPointId: dropPointId || null,
         bookingType:   'cabin',
         cabinNumber:   parseInt(cabinNumber),
         seats:         cabinSeatNumbers,
@@ -495,6 +501,8 @@ const cabinSeats = allSeats.filter(s => cabinSeatNumbers.includes(s.seatNumber))
             meal: { type: selectedMeal.type, price: selectedMeal.price }
           })
         },
+        pickupAddress: pickupAddress || null,
+        dropAddress: dropAddress || null,
       }, { transaction: t });
 
       if (cabinSeats.length > 0) {
