@@ -1,0 +1,42 @@
+sudo mysql -u root << 'EOF'
+
+-- Before count
+SELECT COUNT(*) as 'NULL trips before' 
+FROM expresscab_dev.Trips 
+WHERE booking_mode_snapshot IS NULL OR booking_mode_snapshot = '';
+
+-- Fix all NULL trips using Cars data
+UPDATE expresscab_dev.Trips t
+JOIN expresscab_dev.Cars c ON c.id = t.car_id
+SET 
+  t.booking_mode_snapshot = CASE 
+    WHEN c.cab_type = 'personalize' THEN 'personalized'
+    ELSE 'sharing_and_cabin'
+  END,
+  t.total_seats_snapshot = CASE 
+    WHEN c.cab_type = 'personalize' THEN NULL
+    ELSE c.total_seats
+  END,
+  t.seats_per_cabin_snapshot = CASE 
+    WHEN c.cab_type = 'personalize' THEN NULL
+    ELSE c.cabin_capacity
+  END,
+  t.available_seats = CASE 
+    WHEN t.available_seats IS NULL AND c.cab_type != 'personalize' THEN c.total_seats
+    WHEN t.available_seats IS NULL AND c.cab_type = 'personalize' THEN 1
+    ELSE t.available_seats
+  END
+WHERE 
+  t.booking_mode_snapshot IS NULL OR t.booking_mode_snapshot = '';
+
+-- After count
+SELECT COUNT(*) as 'NULL trips after' 
+FROM expresscab_dev.Trips 
+WHERE booking_mode_snapshot IS NULL OR booking_mode_snapshot = '';
+
+-- Verify
+SELECT booking_mode_snapshot, COUNT(*) as count
+FROM expresscab_dev.Trips
+GROUP BY booking_mode_snapshot;
+
+EOF

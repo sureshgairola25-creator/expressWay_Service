@@ -592,6 +592,8 @@ searchTrips: async (queryParams = {}) => {
     if (startLocation) where.startLocationId = parseInt(startLocation);
     if (endLocation)   where.endLocationId   = parseInt(endLocation);
 
+    
+
     // ── ✅ FIX 1: Exclude personalize trips from this API ────────────────────
     // Personalize has its own endpoint: GET /trips/search-personalize
     // where['$Car.cab_type$'] = { [Op.in]: ['sharing', 'cabin'] };
@@ -844,6 +846,27 @@ if (availableCabinsForFilter < minSeatsInt) continue;
 
         if (!matchesTime) continue;
       }
+// ── 2 hours filter ────────────────────────────────────────────────────────
+const nowUTC = new Date();
+const todayIST = new Date(nowUTC.getTime() + 5.5 * 60 * 60 * 1000);
+const todayISTDateStr = todayIST.toISOString().split('T')[0]; // "2026-05-18"
+
+const isToday = searchDate === todayISTDateStr;
+
+if (isToday) {
+  // Current IST minutes since midnight
+  const nowISTMins = todayIST.getUTCHours() * 60 + todayIST.getUTCMinutes();
+  const cutoffMins = nowISTMins + 120 // +2 hours
+
+  // Trip ka IST departure minutes since midnight
+  const tripUTC = new Date(t.startTime)
+  const tripIST = new Date(tripUTC.getTime() + 5.5 * 60 * 60 * 1000)
+  const tripISTMins = tripIST.getUTCHours() * 60 + tripIST.getUTCMinutes()
+
+  console.log(`Trip: ${tripIST.getUTCHours()}:${tripIST.getUTCMinutes()} IST | Now+2h: ${Math.floor(cutoffMins/60)}:${cutoffMins%60} IST | Skip: ${tripISTMins <= cutoffMins}`)
+
+  if (tripISTMins <= cutoffMins) continue
+}
 
       // ── Pickup points — filtered by cabType ──────────────────────────────
     // ✅ REPLACE WITH — trip specific + startLocation defaults, no city logic

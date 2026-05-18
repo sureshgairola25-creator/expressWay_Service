@@ -319,6 +319,7 @@ const bookingService = {
           customerEmail, customerPhone,
           customerId:   userId,
           bookingId:    booking.id,
+          id:bookingId
         });
         await booking.update({
           paymentOrderId:   paymentResult.order_id,
@@ -1221,7 +1222,36 @@ cancelBooking: async (bookingId, userId) => {
   const bookedTripIds = bookedTrips.map(b => b.tripId);
 
   return trips.filter(trip => !bookedTripIds.includes(trip.id));
-}
+},
+
+
+  verifyPixel: async (bookingId) => {
+    const res = await Booking.findOne({ 
+      where: { bookingId: bookingId }
+    }); 
+       if (!res) throw new NotFound('Booking not found');
+    const booking = await Booking.findOne({
+      where: { bookingId: bookingId },
+      attributes: ['paidAmount', 'bookingStatus', 'pixelFired']
+    })
+
+    if (!booking) return res.json({ status: 'NOT_FOUND' })
+
+    return ({
+      status: booking.bookingStatus === 'completed' ? 'PAID' : booking.bookingStatus,
+      amount: booking.paidAmount,
+      pixelFired: booking.pixelFired || false
+    })
+
+  },
+  markPixelFired: async (bookingId) => {
+    await Booking.update(
+      { pixelFired: true },
+      { where: { bookingId: bookingId } }
+    )
+    return ({ success: true })
+
+  }
 };
 
 module.exports = bookingService;

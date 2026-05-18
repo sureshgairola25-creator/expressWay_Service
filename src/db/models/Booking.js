@@ -166,6 +166,11 @@ dropAddress: {
   defaultValue: null,
   field: 'drop_address'
 },
+pixelFired: {
+  type: DataTypes.BOOLEAN,
+  defaultValue: false,
+  field: 'pixel_fired'
+},
   
   // Future-proofing fields
   // couponId: {

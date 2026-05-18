@@ -19,4 +19,11 @@ router.patch('/admin/:bookingId/payment-status', protect, authorize('admin'), bo
 // ── Personalize cab availability (public — used during trip search) ───────────
 router.get('/personalizeCabs', bookingController.availablePersonalizeCabs);
 
+router.get('/verify-pixel', bookingController.verifyPixel);
+
+router.post('/mark-pixel-fired', bookingController.markPixelFired);
+
+
+
+
 module.exports = router;

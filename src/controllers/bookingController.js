@@ -139,6 +139,49 @@ const bookingController = {
     });
 
   }
+}),
+
+  verifyPixel : asyncHandler(async (req, res) => {
+  try {
+  const { booking_id } = req.query
+
+    const result =
+      await bookingService.verifyPixel(booking_id);
+
+    res.json({
+      success: true,
+      data: result
+    });
+
+  } catch (err) {
+
+    res.status(400).json({
+      success: false,
+      message: err.message
+    });
+
+  }
+}),
+  markPixelFired : asyncHandler(async (req, res) => {
+  try {
+  const { booking_id } = req.body
+
+    const result =
+      await bookingService.markPixelFired(booking_id);
+
+    res.json({
+      success: true,
+      data: result
+    });
+
+  } catch (err) {
+
+    res.status(400).json({
+      success: false,
+      message: err.message
+    });
+
+  }
 })
 };
 

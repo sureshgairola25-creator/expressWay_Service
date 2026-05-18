@@ -23,7 +23,7 @@ const mapPaymentStatus = (status) => {
 
 const paymentService = {
   createOrder: async (orderDetails) => {
-    const { orderAmount,customer_id, customerEmail, customerPhone, bookingId } = orderDetails;
+    const { orderAmount,customer_id, customerEmail, customerPhone, bookingId,id } = orderDetails;
 
     if (!orderAmount || !customerPhone || !bookingId) {
       throw new BadRequest('Missing required payment details: orderAmount, customerPhone, and bookingId are mandatory.');
@@ -47,7 +47,7 @@ const paymentService = {
         ...(customerEmail && { customer_email: customerEmail }),
       },
       order_meta: {
-        return_url: `${process.env.CLIENT_URL}/bookings`,
+        return_url: `${process.env.CLIENT_URL}/bookings?booking_id=${id}&order_status={order_status}`,
       },
     };
 
